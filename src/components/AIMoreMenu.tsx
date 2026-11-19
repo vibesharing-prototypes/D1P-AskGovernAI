@@ -7,14 +7,15 @@ import ExternalLinkIcon from "@diligentcorp/atlas-react-bundle/icons/ExternalLin
 interface AIMoreMenuProps {
   anchorEl: HTMLElement | null;
   onClose: () => void;
+  onGiveFeedback?: () => void;
 }
 
-export default function AIMoreMenu({ anchorEl, onClose }: AIMoreMenuProps) {
+export default function AIMoreMenu({ anchorEl, onClose, onGiveFeedback }: AIMoreMenuProps) {
   const { tokens: { semantic: { color } } } = useTheme();
 
   const items = [
     { Icon: InfoIcon, label: "Learn more about data policy", onClick: onClose, TrailingIcon: ExternalLinkIcon, href: "https://help.highbond.com/helpdocs/highbond/en-us/Default.htm#cshid=brds-ai-faq" },
-    { Icon: GiveFeedbackIcon, label: "Give feedback", onClick: onClose },
+    { Icon: GiveFeedbackIcon, label: "Give feedback", onClick: () => { onClose(); onGiveFeedback?.(); } },
   ];
 
   return (

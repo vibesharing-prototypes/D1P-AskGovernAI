@@ -18,6 +18,22 @@ export interface Source {
   documentId?: import("./documents.js").DocumentId;
   /** Page number to open in the document viewer when this cite is clicked. 1 = cover. */
   targetPage?: number;
+  /** Product module the source comes from. Set only by the AGAI integration use cases demo. */
+  module?: "Books" | "Task Hub" | "Decision Hub" | "Data Room" | "Resource Center" | "Web";
+  /** AGAI integration use cases demo: the "/ Data" part of the module source chip. A document name
+   *  (Data Room, Decision Hub), a book name (agenda and minutes), or a task name. */
+  chipData?: string;
+  /** AGAI integration use cases demo: page in the product where this information lives (task, approval,
+   *  data room file). Opens in a new browser tab. Books sources use the book reader. */
+  deepLink?: string;
+  /** Web sources only: the page address. Web citations open it in a new browser tab. */
+  url?: string;
+  /** Web sources only: site name shown on the citation (for example "sec.gov"). */
+  site?: string;
+  /** Web sources only: publication date shown in the citation card. */
+  published?: string;
+  /** Web sources only: short excerpt shown in the citation card. */
+  snippet?: string;
 }
 
 export interface ChatMessage {
@@ -27,6 +43,14 @@ export interface ChatMessage {
   richContent?: import("./hybrid-search.constants.js").RichBlock[];
   sources?: Source[];
   timestamp: string;
+  /** AGAI integration use cases demo only: which scripted step (0-based) produced this answer. */
+  demoStep?: number;
+  /** Reasoning kept on the message as an audit trail (web search scenario). */
+  reasoning?: import("./web-search-scenario.js").ReasoningData;
+  /** Web search offer card on the message, and what the user chose. */
+  webOffer?: "pending" | "accepted" | "declined";
+  /** Offer card title; defaults to the admin SEC-scenario copy when absent. */
+  webOfferTitle?: string;
 }
 
 export interface InsightCard {
@@ -997,6 +1021,51 @@ export const adminBooks: AdminBook[] = [
     documentStatus: "Published",
     status: "Published",
     lastUpdated: "03/16/2026",
+  },
+  {
+    id: "rk-sep-2025",
+    title: "Risk Committee — September 2025",
+    dateRange: "Sep 17, 2025",
+    meetingDate: "09/17/2025",
+    labels: ["Quarterly", "Risk committee"],
+    committees: ["Risk committee"],
+    extraCommittees: 0,
+    isLocked: false,
+    hasCustomAccess: false,
+    documentName: "Risk_Committee_September_2025",
+    documentStatus: "Published",
+    status: "Published",
+    lastUpdated: "09/15/2025",
+  },
+  {
+    id: "rk-dec-2025",
+    title: "Risk Committee — December 2025",
+    dateRange: "Dec 3, 2025",
+    meetingDate: "12/03/2025",
+    labels: ["Quarterly", "Risk committee"],
+    committees: ["Risk committee"],
+    extraCommittees: 0,
+    isLocked: false,
+    hasCustomAccess: false,
+    documentName: "Risk_Committee_December_2025",
+    documentStatus: "Published",
+    status: "Published",
+    lastUpdated: "12/01/2025",
+  },
+  {
+    id: "rk-mar-2026",
+    title: "Risk Committee — March 2026",
+    dateRange: "Mar 4, 2026",
+    meetingDate: "03/04/2026",
+    labels: ["Quarterly", "Risk committee"],
+    committees: ["Risk committee"],
+    extraCommittees: 0,
+    isLocked: false,
+    hasCustomAccess: false,
+    documentName: "Risk_Committee_March_2026",
+    documentStatus: "Published",
+    status: "Published",
+    lastUpdated: "03/02/2026",
   },
 ];
 

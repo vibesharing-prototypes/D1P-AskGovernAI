@@ -22,65 +22,42 @@ import {
   ONBOARDING_RICH_BLOCKS,
   matchTriggerResponse,
 } from "../data/hybrid-search.constants.js";
+import {
+  isDemoPath,
+  DEMO_STEPS,
+  DEMO_DIRECTOR,
+  DEMO_THINKING_LABEL_MS,
+  matchDemoStep,
+  type DemoStep,
+} from "../data/demo-agai-integration-usecases.js";
+import {
+  isWsDemoPath,
+  WS_DEMO_STEPS,
+  WS_DEMO_DIRECTOR,
+  WS_DEMO_THINKING_LABEL_MS,
+  matchWsDemoStep,
+  WS_WEB_OFFERS,
+} from "../data/demo-web-search.js";
+import {
+  type ReasoningData,
+  WEB_REASONING_STEP_MS,
+  WEB_SCENARIO_QUESTION,
+  WEB_SCENARIO_THREAD_TITLE,
+  WEB_OFFER_REASONING,
+  WEB_OFFER_CONTENT,
+  WEB_OFFER_SOURCES,
+  WEB_ANSWER_REASONING,
+  WEB_DIRECT_REASONING,
+  WEB_ANSWER_CONTENT,
+  WEB_ANSWER_SOURCES,
+  WEB_NOT_USED_REASONING,
+} from "../data/web-search-scenario.js";
+import WebSearchDisclosureDialog from "../components/webSearch/WebSearchDisclosureDialog.js";
+import { DEFAULT_SOURCE_PACK_IDS } from "../data/web-search-sources.js";
 
 export type SmartAssistAudience = "admin" | "director";
 
-// ─── Typing-placeholder hook ──────────────────────────────────────────────────
-
-const COMPOSER_PLACEHOLDER_PHRASES = [
-  "Ask me anything about your current & archived books",
-  "Type @ for expert skills",
-  "Type / for agents",
-  "Ask me anything about your current & archived books", // final resting state
-];
-
-function useTypingPlaceholder(phrases: string[], typingMs: number, holdMs: number): string {
-  const [displayText, setDisplayText] = useState("");
-  const stateRef = useRef({ idx: 0, char: 0, phase: "typing" as "typing" | "holding" | "erasing" });
-
-  useEffect(() => {
-    let tid: ReturnType<typeof setTimeout>;
-
-    function tick() {
-      const s = stateRef.current;
-      const phrase = phrases[s.idx];
-      const charInterval = typingMs / phrase.length;
-
-      const isLast = s.idx === phrases.length - 1;
-
-      if (s.phase === "typing") {
-        s.char += 1;
-        setDisplayText(phrase.slice(0, s.char));
-        if (s.char >= phrase.length) {
-          if (isLast) return; // last phrase fully typed — stop here
-          s.phase = "holding";
-          tid = setTimeout(tick, holdMs);
-        } else {
-          tid = setTimeout(tick, charInterval);
-        }
-      } else if (s.phase === "holding") {
-        s.phase = "erasing";
-        tick();
-      } else {
-        s.char -= 1;
-        setDisplayText(phrase.slice(0, s.char));
-        if (s.char <= 0) {
-          s.idx = s.idx + 1;
-          s.char = 0;
-          s.phase = "typing";
-          tid = setTimeout(tick, 100);
-        } else {
-          tid = setTimeout(tick, charInterval / 2);
-        }
-      }
-    }
-
-    tid = setTimeout(tick, 3000 + typingMs / phrases[0].length);
-    return () => clearTimeout(tid);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  return displayText;
-}
+const COMPOSER_PLACEHOLDER = "Ask anything about your board materials";
 
 // ─── Context shape ────────────────────────────────────────────────────────────
 
@@ -151,6 +128,59 @@ interface SmartAssistContextValue {
   setSelectedInsight: (v: "summary" | "prep" | "risk" | "audit" | null) => void;
   audience: SmartAssistAudience;
   setAudience: (v: SmartAssistAudience) => void;
+  // ─── AGAI integration use cases demo (the director view) ───────────────────────────────
+  // Everything below is inert outside demo mode.
+  demoMode: boolean;
+  /** True on the web-search demo's own path. Picks which scripted step array,
+   *  persona and copy are active; false falls back to the integration-usecases demo. */
+  wsDemoMode: boolean;
+  /** The scripted steps for whichever demo is active (integration usecases or web search). */
+  activeDemoSteps: DemoStep[];
+  /** The persona shown on messages for whichever demo is active. */
+  activeDemoDirector: { name: string; initials: string; id: string };
+  /** Scripted answers delivered so far (= index of the next step to prompt). */
+  demoStepsDone: number;
+  /** While a scripted answer is pending: which step is generating and which of
+   *  its reasoning steps is active. Null otherwise. */
+  demoPending: { step: number; active: number } | null;
+  /** Outcome of the step 6 share confirmation. */
+  demoShare: "pending" | "shared" | "cancelled";
+  resolveDemoShare: (v: "shared" | "cancelled") => void;
+  /** Presenter notes panel (header notes button toggles it). Persists for the session. */
+  demoNotesOpen: boolean;
+  setDemoNotesOpen: (open: boolean) => void;
+  /** Start over: fresh chat, share card back to pending. */
+  restartDemo: () => void;
+  /** Web-search demo only: clicking the empty composer previews the next
+   *  scripted prompt. Once a prompt is loaded it's left alone until sent —
+   *  only an empty composer cycles. Resyncs to the next unanswered step
+   *  whenever one lands. No-op outside wsDemoMode. */
+  cycleComposerPrompt: () => void;
+  // ─── Web search ────────────────────────────────────────────────────────────
+  // Off by default. Once on, it stays on across chats until the user turns it
+  // off (session-only in this prototype). The first time it's turned on, the
+  // disclosure dialog sets the boundary of internet use.
+  webSearchEnabled: boolean;
+  /** Turn web search on; shows the disclosure dialog first if not yet accepted. */
+  turnOnWebSearch: (onEnabled?: () => void) => void;
+  turnOffWebSearch: () => void;
+  /** Accept or decline the in-answer offer to search the web. */
+  respondToWebOffer: (messageId: string, accept: boolean) => void;
+  /** Live reasoning while a scripted web search answer is generating. */
+  reasoningPending: (ReasoningData & { active: number }) | null;
+  /** Composer Stop: cancels a scripted answer that is still generating. */
+  stopGenerating: () => void;
+  /** Composer-attached banner nudging toward feedback, after enough web searches in this chat. */
+  showSourceFeedbackBanner: boolean;
+  dismissSourceFeedbackBanner: () => void;
+  // ─── Web search: sources in scope ──────────────────────────────────────────
+  // One site, one admin-configured list — no per-board variant. Set in
+  // Organization settings → Artificial intelligence (AI); read-only for
+  // directors, shown to both audiences as "Sources in scope".
+  enabledSourcePackIds: string[];
+  setEnabledSourcePackIds: (ids: string[]) => void;
+  customPeers: string[];
+  setCustomPeers: (peers: string[]) => void;
 }
 
 const SmartAssistContext = createContext<SmartAssistContextValue | null>(null);
@@ -179,6 +209,143 @@ function SmartAssistProviderInner({ children }: { children: React.ReactNode }) {
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const location = useLocation();
+  // The director view IS the demo: no URL flag, so it survives any navigation.
+  const demoMode = isDemoPath(location.pathname);
+  // The web-search demo is a sub-path of the director demo — its own persona
+  // and scripted steps, same presenter-notes/share/restart machinery.
+  const wsDemoMode = isWsDemoPath(location.pathname);
+  const activeDemoSteps = wsDemoMode ? WS_DEMO_STEPS : DEMO_STEPS;
+  const activeDemoDirector = wsDemoMode ? WS_DEMO_DIRECTOR : DEMO_DIRECTOR;
+  const [demoPending, setDemoPending] = useState<{ step: number; active: number } | null>(null);
+  const [demoNotesOpen, setDemoNotesOpenState] = useState(
+    () => sessionStorage.getItem("agai-integration-usecases-demo-notes-open") !== "0",
+  );
+  const setDemoNotesOpen = (open: boolean) => {
+    setDemoNotesOpenState(open);
+    sessionStorage.setItem("agai-integration-usecases-demo-notes-open", open ? "1" : "0");
+  };
+  const [demoShare, setDemoShare] = useState<"pending" | "shared" | "cancelled">("pending");
+  const demoTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const clearDemoTimers = () => {
+    demoTimersRef.current.forEach(clearTimeout);
+    demoTimersRef.current = [];
+    setDemoPending(null);
+  };
+  // ─── Web search state ──────────────────────────────────────────────────────
+  // The disclosure dialog pops up on every search activation unless the user
+  // checked "Don't show this again" — that choice is persisted so it sticks
+  // across reloads.
+  const WEB_DISCLOSURE_DISMISSED_KEY = "webSearchDisclosureDismissed";
+  const readWebDisclosureDismissed = () => {
+    try {
+      return localStorage.getItem(WEB_DISCLOSURE_DISMISSED_KEY) === "true";
+    } catch {
+      return false;
+    }
+  };
+  const writeWebDisclosureDismissed = () => {
+    try {
+      localStorage.setItem(WEB_DISCLOSURE_DISMISSED_KEY, "true");
+    } catch {
+      /* localStorage unavailable — preference just isn't persisted */
+    }
+  };
+  const [webSearchEnabled, setWebSearchEnabled] = useState(false);
+  const [enabledSourcePackIds, setEnabledSourcePackIds] = useState<string[]>(DEFAULT_SOURCE_PACK_IDS);
+  const [customPeers, setCustomPeers] = useState<string[]>([]);
+  const webDisclosureDismissedRef = useRef(readWebDisclosureDismissed());
+  const [webDisclosureOpen, setWebDisclosureOpen] = useState(false);
+  const afterWebEnabledRef = useRef<(() => void) | null>(null);
+  const [reasoningPending, setReasoningPending] = useState<(ReasoningData & { active: number }) | null>(null);
+  // Composer-attached feedback banner: counts actual web searches (not offers)
+  // in the current chat; shows after the 2nd, resets when the thread changes.
+  const [webSearchCount, setWebSearchCount] = useState(0);
+  const [feedbackBannerDismissed, setFeedbackBannerDismissed] = useState(false);
+  const showSourceFeedbackBanner = webSearchCount >= 2 && !feedbackBannerDismissed;
+  const webTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const clearWebTimers = () => {
+    webTimersRef.current.forEach(clearTimeout);
+    webTimersRef.current = [];
+    setReasoningPending(null);
+  };
+  const turnOnWebSearch = (onEnabled?: () => void) => {
+    if (webDisclosureDismissedRef.current) {
+      setWebSearchEnabled(true);
+      onEnabled?.();
+      return;
+    }
+    afterWebEnabledRef.current = onEnabled ?? null;
+    setWebDisclosureOpen(true);
+  };
+  const confirmWebDisclosure = (dontShowAgain: boolean) => {
+    if (dontShowAgain) {
+      webDisclosureDismissedRef.current = true;
+      writeWebDisclosureDismissed();
+    }
+    setWebDisclosureOpen(false);
+    setWebSearchEnabled(true);
+    const after = afterWebEnabledRef.current;
+    afterWebEnabledRef.current = null;
+    after?.();
+  };
+  const cancelWebDisclosure = (dontShowAgain: boolean) => {
+    if (dontShowAgain) {
+      webDisclosureDismissedRef.current = true;
+      writeWebDisclosureDismissed();
+    }
+    setWebDisclosureOpen(false);
+    afterWebEnabledRef.current = null;
+  };
+  const nowTime = () => new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
+  // Stashes what to run if a given offer message is accepted. Shared by any
+  // caller of runScriptedAnswer with a webOffer — today that's the admin SEC
+  // scenario (falls back to WEB_ANSWER_REASONING below when nothing is
+  // stashed) and the director web-search demo's J2/J3 offers.
+  const pendingWsAnswerRef = useRef<
+    Record<string, { reasoning: ReasoningData; richContent: ChatMessage["richContent"]; sources: ChatMessage["sources"]; demoStep?: number }>
+  >({});
+  // Plays a scripted answer: reasoning steps go live one by one, then the answer
+  // lands with the reasoning kept on it as an audit trail.
+  const runScriptedAnswer = (
+    reasoning: ReasoningData,
+    answer: Pick<ChatMessage, "richContent" | "sources" | "webOffer" | "webOfferTitle" | "demoStep"> & { id?: string; isWebSearch?: boolean },
+  ) => {
+    clearWebTimers();
+    setIsGenerating(true);
+    setReasoningPending({ ...reasoning, active: 0 });
+    reasoning.steps.forEach((_, i) => {
+      if (i === 0) return;
+      webTimersRef.current.push(setTimeout(() => setReasoningPending({ ...reasoning, active: i }), i * WEB_REASONING_STEP_MS));
+    });
+    webTimersRef.current.push(setTimeout(() => {
+      webTimersRef.current = [];
+      setReasoningPending(null);
+      const { id, isWebSearch, ...rest } = answer;
+      setMessages((prev) => [
+        ...prev,
+        { id: id ?? `${Date.now()}-ai`, role: "ai" as const, content: "", timestamp: nowTime(), reasoning, ...rest },
+      ]);
+      if (isWebSearch) setWebSearchCount((c) => c + 1);
+      setIsGenerating(false);
+    }, reasoning.steps.length * WEB_REASONING_STEP_MS));
+  };
+  const respondToWebOffer = (messageId: string, accept: boolean) => {
+    hasInteractedWithThread.current = true;
+    const mark = (status: ChatMessage["webOffer"]) =>
+      setMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, webOffer: status } : m)));
+    if (!accept) { mark("declined"); return; }
+    const pending = pendingWsAnswerRef.current[messageId];
+    turnOnWebSearch(() => {
+      mark("accepted");
+      if (pending) {
+        runScriptedAnswer(pending.reasoning, { richContent: pending.richContent, sources: pending.sources, demoStep: pending.demoStep, isWebSearch: true });
+        delete pendingWsAnswerRef.current[messageId];
+      } else {
+        runScriptedAnswer(WEB_ANSWER_REASONING, { richContent: WEB_ANSWER_CONTENT, sources: WEB_ANSWER_SOURCES, isWebSearch: true });
+      }
+    });
+  };
+
   const inBook = isBookReaderPath(location.pathname);
   const currentBookTitle = inBook ? (bookTitleForPath(location.pathname) ?? "This book") : null;
   const [sources, setSources] = useState<Source[]>(() =>
@@ -213,10 +380,7 @@ function SmartAssistProviderInner({ children }: { children: React.ReactNode }) {
   const bookScopeTitle = isBookScope ? (bookSource?.label ?? null) : null;
   const setBookScope = () => setSources(mvpSourcesForScope("book", currentBookTitle ?? "This book"));
   const setGlobalScope = () => setSources(mvpSourcesForScope("home"));
-  const animatedComposerPlaceholder = useTypingPlaceholder(COMPOSER_PLACEHOLDER_PHRASES, 1500, 5000);
-  const composerPlaceholder = isBookScope
-    ? "Ask me anything about this book"
-    : animatedComposerPlaceholder;
+  const composerPlaceholder = COMPOSER_PLACEHOLDER;
   const [variantIndex, setVariantIndex] = useState(0);
   const [audience, setAudienceState] = useState<SmartAssistAudience>("admin");
   const audienceRef = useRef<SmartAssistAudience>("admin");
@@ -228,6 +392,8 @@ function SmartAssistProviderInner({ children }: { children: React.ReactNode }) {
     if (audienceRef.current === v) return;
     audienceRef.current = v;
     setAudienceState(v);
+    clearWebTimers();
+    setIsGenerating(false);
     setVariantIndex(0);
     setActiveTab(0);
     setSelectedInsight(null);
@@ -256,6 +422,11 @@ function SmartAssistProviderInner({ children }: { children: React.ReactNode }) {
   const [chatTimestamp, setChatTimestamp] = useState<string | null>(null);
   const [threadSplitIndex, setThreadSplitIndex] = useState<number | null>(null);
   const [currentThreadId, setCurrentThreadId] = useState<string | null>(null);
+  // A new or different thread starts the web-search count and banner fresh.
+  useEffect(() => {
+    setWebSearchCount(0);
+    setFeedbackBannerDismissed(false);
+  }, [currentThreadId]);
   const [overlayLeftPanelOpen, setOverlayLeftPanelOpen] = useState(true);
   const [bookPanelDismissed, setBookPanelDismissed] = useState(false);
   const [activeTab, setActiveTab] = useState(0);
@@ -306,6 +477,8 @@ function SmartAssistProviderInner({ children }: { children: React.ReactNode }) {
   }, [location.pathname, panelOpen, overlayOpen]);
   const consumeFreshOpen = () => {
     if (!pendingFreshOpen) return;
+    clearWebTimers();
+    setIsGenerating(false);
     setMessages([]);
     setChatTimestamp(null);
     setCurrentThreadId(null);
@@ -340,11 +513,13 @@ function SmartAssistProviderInner({ children }: { children: React.ReactNode }) {
       ));
       setThreadLastActivity((prev) => ({ ...prev, [currentThreadId]: now }));
     }
-  }, [messages.length, isGenerating, currentThreadId]);
+  }, [messages, isGenerating, currentThreadId]);
 
   const handleSend = (text: string, opts?: { newSession?: boolean }) => {
     const now = Date.now();
     if (now - lastSendAtRef.current < 500) return;
+    // A scripted web search answer is still streaming its reasoning.
+    if (reasoningPending) return;
     lastSendAtRef.current = now;
     hasInteractedWithThread.current = true;
     // Sending a message is always a chat action — make sure Smart Assist is on
@@ -354,17 +529,27 @@ function SmartAssistProviderInner({ children }: { children: React.ReactNode }) {
     setSelectedInsight(null);
 
     const isOnboarding = text.trim() === ONBOARDING_PROMPT;
-    const triggerMatch = !isOnboarding ? matchTriggerResponse(text) : null;
+    // AGAI integration use cases demo (or the web-search demo): an exact
+    // scripted prompt returns its authored answer.
+    const demoIdx = wsDemoMode ? matchWsDemoStep(text) : demoMode ? matchDemoStep(text) : -1;
+    const demoStep = demoIdx >= 0 ? activeDemoSteps[demoIdx] : null;
+    const triggerMatch = demoStep
+      ? { threadTitle: demoStep.threadTitle, sources: demoStep.sources, richContent: demoStep.richContent }
+      : !isOnboarding ? matchTriggerResponse(text) : null;
     const variantPool = audienceRef.current === "director"
       ? (inBook ? DIRECTOR_CONVERSATION_VARIANTS : DIRECTOR_HOME_CONVERSATION_VARIANTS)
       : CONVERSATION_VARIANTS;
     const responseVariant = variantPool[variantIndex % variantPool.length];
+    // Web search scenario: the first question of a new admin chat (outside the
+    // director demo) is the scripted "not enough in your board materials" case.
+    const isFreshChat = opts?.newSession || messages.length === 0;
+    const webScenario = audienceRef.current === "admin" && !demoMode && !isOnboarding && !triggerMatch && isFreshChat;
 
     // Build the user bubble — for trigger matches use the verbatim typed text.
     const userMsg: ChatMessage = {
       id: Date.now().toString(),
       role: "user",
-      content: isOnboarding ? text : (triggerMatch ? text : responseVariant.userQuestion),
+      content: isOnboarding ? text : (triggerMatch ? text : webScenario ? WEB_SCENARIO_QUESTION : responseVariant.userQuestion),
       timestamp: new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }),
     };
 
@@ -378,7 +563,8 @@ function SmartAssistProviderInner({ children }: { children: React.ReactNode }) {
       scopePinnedRef.current = true;
       // New chat: auto-create thread, date shown at top
       const now = new Date().toISOString();
-      setChatTimestamp(formatChatDate(now));
+      // The demo story happens on Thursday, November 12, 2026.
+      setChatTimestamp(formatChatDate(demoMode ? "2026-11-12T12:00:00" : now));
       setThreadSplitIndex(null);
       const id = `u-${Date.now()}`;
       // Create thread with an empty title so the list hides it until the title
@@ -392,7 +578,7 @@ function SmartAssistProviderInner({ children }: { children: React.ReactNode }) {
       setTimeout(() => {
         const title = isOnboarding
           ? "Welcome"
-          : (triggerMatch ? triggerMatch.threadTitle : responseVariant.threadTitle);
+          : (triggerMatch ? triggerMatch.threadTitle : webScenario ? WEB_SCENARIO_THREAD_TITLE : responseVariant.threadTitle);
         setUserThreads((prev) =>
           prev.map((t) => (t.id === id ? { ...t, title } : t)),
         );
@@ -409,7 +595,61 @@ function SmartAssistProviderInner({ children }: { children: React.ReactNode }) {
     setPrompt("");
     setIsGenerating(true);
 
-    setTimeout(() => {
+    if (webScenario) {
+      // Web already on: search straight away. Otherwise answer from board
+      // materials and offer to search the web.
+      if (webSearchEnabled) {
+        runScriptedAnswer(WEB_DIRECT_REASONING, { richContent: WEB_ANSWER_CONTENT, sources: WEB_ANSWER_SOURCES, isWebSearch: true });
+      } else {
+        runScriptedAnswer(WEB_OFFER_REASONING, { richContent: WEB_OFFER_CONTENT, sources: WEB_OFFER_SOURCES, webOffer: "pending" });
+      }
+      return;
+    }
+
+    // Web-search demo: J2/J3 go through the same offer/disclosure/search
+    // mechanism as the admin scenario above, keyed by the matched step
+    // instead of "first message of a fresh chat". J1 has no entry here and
+    // falls through to the flat scripted-answer path below unchanged.
+    const wsOfferCfg = wsDemoMode && demoIdx >= 0 ? WS_WEB_OFFERS[demoIdx] : undefined;
+    if (wsOfferCfg) {
+      if (webSearchEnabled) {
+        runScriptedAnswer(wsOfferCfg.directReasoning, { richContent: wsOfferCfg.answerContent, sources: wsOfferCfg.answerSources, demoStep: demoIdx, isWebSearch: true });
+      } else {
+        const offerId = `${Date.now()}-ai`;
+        pendingWsAnswerRef.current[offerId] = {
+          reasoning: wsOfferCfg.answerReasoning,
+          richContent: wsOfferCfg.answerContent,
+          sources: wsOfferCfg.answerSources,
+          demoStep: demoIdx,
+        };
+        runScriptedAnswer(wsOfferCfg.offerReasoning, {
+          id: offerId,
+          richContent: wsOfferCfg.offerContent,
+          sources: wsOfferCfg.offerSources,
+          webOffer: "pending",
+          webOfferTitle: wsOfferCfg.webOfferTitle,
+        });
+      }
+      return;
+    }
+
+    // Scripted demo answers show each thinking label in turn before the answer.
+    const stepMs = wsDemoMode ? WS_DEMO_THINKING_LABEL_MS : DEMO_THINKING_LABEL_MS;
+    const answerDelay = demoStep ? demoStep.reasoning.length * stepMs : 1800;
+    if (demoStep) {
+      clearDemoTimers();
+      if (demoStep.action === "share") setDemoShare("pending");
+      setDemoPending({ step: demoIdx, active: 0 });
+      demoStep.reasoning.forEach((_, i) => {
+        if (i === 0) return;
+        demoTimersRef.current.push(
+          setTimeout(() => setDemoPending({ step: demoIdx, active: i }), i * stepMs),
+        );
+      });
+    }
+
+    const answerTimer = setTimeout(() => {
+      if (demoStep) setDemoPending(null);
       const richContent = isOnboarding
         ? ONBOARDING_RICH_BLOCKS
         : (triggerMatch ? triggerMatch.richContent : responseVariant.richContent);
@@ -425,11 +665,48 @@ function SmartAssistProviderInner({ children }: { children: React.ReactNode }) {
           richContent,
           sources,
           timestamp: new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }),
+          ...(demoStep ? { demoStep: demoIdx } : {}),
+          // Admin chat with web search on: say the web wasn't needed for this one.
+          ...(webSearchEnabled && audienceRef.current === "admin" && !demoMode && !isOnboarding ? { reasoning: WEB_NOT_USED_REASONING } : {}),
         },
       ]);
       if (!isOnboarding && !triggerMatch) setVariantIndex((i) => (i + 1) % variantPool.length);
       setIsGenerating(false);
-    }, 1800);
+    }, answerDelay);
+    if (demoStep) demoTimersRef.current.push(answerTimer);
+  };
+
+  const demoStepsDone = demoMode ? messages.filter((m) => m.demoStep !== undefined).length : 0;
+
+  // Web-search demo: clicking the empty composer drops in the next scripted
+  // prompt. Once a prompt is loaded, further clicks (to position the cursor,
+  // re-focus, or interact with the Tools menu) leave it alone until it's sent
+  // — only an empty composer previews the next unanswered step, which also
+  // resyncs whenever one lands.
+  const [wsCycleOffset, setWsCycleOffset] = useState(0);
+  useEffect(() => { setWsCycleOffset(0); }, [demoStepsDone]);
+  const lastCycleAtRef = useRef(0);
+  const cycleComposerPrompt = () => {
+    if (!wsDemoMode || isGenerating || prompt.trim()) return;
+    const now = Date.now();
+    // A single click fires both onFocus and onClick on the same composer
+    // wrapper — debounce so one click advances exactly one step.
+    if (now - lastCycleAtRef.current < 150) return;
+    lastCycleAtRef.current = now;
+    const maxOffset = Math.max(activeDemoSteps.length - 1 - demoStepsDone, 0);
+    const idx = Math.min(demoStepsDone + wsCycleOffset, activeDemoSteps.length - 1);
+    const step = activeDemoSteps[idx];
+    if (!step) return;
+    setPrompt(step.prompt);
+    setWsCycleOffset((o) => Math.min(o + 1, maxOffset));
+  };
+
+  const resetDemoState = () => {
+    clearDemoTimers();
+    clearWebTimers();
+    setDemoShare("pending");
+    setIsGenerating(false);
+    setWsCycleOffset(0);
   };
 
   return (
@@ -476,6 +753,7 @@ function SmartAssistProviderInner({ children }: { children: React.ReactNode }) {
         setGlobalScope,
         composerPlaceholder,
         resetChat: () => {
+          resetDemoState();
           setMessages([]);
           setChatTimestamp(null);
           setCurrentThreadId(null);
@@ -484,6 +762,7 @@ function SmartAssistProviderInner({ children }: { children: React.ReactNode }) {
           reseedScopeForFreshChat();
         },
         deleteAllThreads: () => {
+          resetDemoState();
           setUserThreads([]);
           setStaticThreadsCleared(true);
           setMessages([]);
@@ -494,6 +773,7 @@ function SmartAssistProviderInner({ children }: { children: React.ReactNode }) {
           reseedScopeForFreshChat();
         },
         loadThread: (msgs: ChatMessage[], threadId?: string) => {
+          resetDemoState();
           hasInteractedWithThread.current = false;
           setMessages(msgs);
           setChatTimestamp(null);
@@ -521,9 +801,47 @@ function SmartAssistProviderInner({ children }: { children: React.ReactNode }) {
         setSelectedInsight,
         audience,
         setAudience,
+        demoMode,
+        wsDemoMode,
+        activeDemoSteps,
+        activeDemoDirector,
+        demoStepsDone,
+        demoPending,
+        demoNotesOpen,
+        setDemoNotesOpen,
+        demoShare,
+        resolveDemoShare: setDemoShare,
+        restartDemo: () => {
+          resetDemoState();
+          setMessages([]);
+          setChatTimestamp(null);
+          setCurrentThreadId(null);
+          setThreadSplitIndex(null);
+          hasInteractedWithThread.current = false;
+          setPrompt("");
+          reseedScopeForFreshChat();
+        },
+        cycleComposerPrompt,
+        webSearchEnabled,
+        turnOnWebSearch,
+        turnOffWebSearch: () => setWebSearchEnabled(false),
+        respondToWebOffer,
+        reasoningPending,
+        stopGenerating: () => {
+          clearDemoTimers();
+          clearWebTimers();
+          setIsGenerating(false);
+        },
+        showSourceFeedbackBanner,
+        dismissSourceFeedbackBanner: () => setFeedbackBannerDismissed(true),
+        enabledSourcePackIds,
+        setEnabledSourcePackIds,
+        customPeers,
+        setCustomPeers,
       }}
     >
       {children}
+      <WebSearchDisclosureDialog open={webDisclosureOpen} onConfirm={confirmWebDisclosure} onCancel={cancelWebDisclosure} />
     </SmartAssistContext.Provider>
   );
 }

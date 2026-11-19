@@ -3,11 +3,16 @@ import {
   Box,
   Typography,
   Switch,
+  Checkbox,
+  FormControlLabel,
   Button,
   Stack,
   OutlinedInput,
   InputAdornment,
   IconButton,
+  Link,
+  Drawer,
+  useTheme,
 } from "@mui/material";
 import SearchIcon from "@mui/icons-material/Search";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
@@ -15,8 +20,10 @@ import BackupOutlinedIcon from "@mui/icons-material/BackupOutlined";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import CloseIcon from "@mui/icons-material/Close";
 import CheckCircleOutlinedIcon from "@mui/icons-material/CheckCircleOutlined";
-import { PageHeader, OverflowBreadcrumbs } from "@diligentcorp/atlas-react-bundle";
+import { PageHeader, OverflowBreadcrumbs, Footer } from "@diligentcorp/atlas-react-bundle";
 import { NavLink as RouterNavLink } from "react-router";
+import SourcePacksPicker from "../components/webSearch/SourcePacksPicker.js";
+import { useSmartAssist } from "../context/SmartAssistContext.js";
 
 const SETTINGS_NAV = [
   "Infrastructure and security",
@@ -38,30 +45,25 @@ interface AiFeature {
 }
 
 const INITIAL_FEATURES: Record<string, AiFeature> = {
-  smartAssist: {
-    name: "Smart Assist",
-    description: "Search board content with chat on the admin side",
-    enabled: true,
-  },
-  aiBoardMember: {
-    name: "AI Board Member",
-    description: "Search board content with chat on the director side",
+  askGovernAI: {
+    name: "Ask GovernAI",
+    description: "Find answers in your board materials with AI chat. Available to administrators",
     enabled: true,
   },
   smartSummary: {
     name: "Smart Summary",
-    description: "Create and read an accurate executive summary",
+    description: "Create and read an accurate executive summary of a book",
     enabled: true,
   },
   smartPrep: {
     name: "Smart Prep",
     note: "Requires Smart Summary to be enabled.",
-    description: "Prepare smarter with suggested discussion topics",
+    description: "Prepare smarter for a meeting with suggested discussion topics",
     enabled: true,
   },
   smartRiskScanner: {
     name: "Smart Risk Scanner",
-    description: "Identify potential business risks",
+    description: "Identify potential business risks in the book",
     enabled: true,
   },
 };
@@ -74,7 +76,7 @@ type AlertDismissState = {
   onStates: Record<string, boolean>;
 };
 
-const CHAT_ASSIST_KEYS = ["smartAssist", "aiBoardMember"] as const;
+const CHAT_ASSIST_KEYS = ["askGovernAI"] as const;
 const INSIGHTS_KEYS = ["smartSummary", "smartPrep", "smartRiskScanner"] as const;
 
 function shouldShowAlert(
@@ -91,9 +93,27 @@ function shouldShowAlert(
 }
 
 export default function OrganizationSettingsPage() {
+  const {
+    enabledSourcePackIds: committedSourcePackIds,
+    setEnabledSourcePackIds: commitSourcePackIds,
+    customPeers: committedPeers,
+    setCustomPeers: commitPeers,
+  } = useSmartAssist();
   const [activeTab, setActiveTab] = useState<SettingsTab>("Artificial intelligence (AI)");
   const [features, setFeatures] = useState(INITIAL_FEATURES);
   const [saved, setSaved] = useState(INITIAL_FEATURES);
+  const [webSearchEnabled, setWebSearchEnabled] = useState(false);
+  const [savedWebSearchEnabled, setSavedWebSearchEnabled] = useState(false);
+  const [sourcePackIds, setSourcePackIds] = useState(committedSourcePackIds);
+  const [peers, setPeers] = useState(committedPeers);
+  const [peerFilingsEnabled, setPeerFilingsEnabled] = useState(false);
+  const [savedPeerFilingsEnabled, setSavedPeerFilingsEnabled] = useState(false);
+  const [sourcesSheetOpen, setSourcesSheetOpen] = useState(false);
+  const {
+    presets: { SideSheetPresets },
+  } = useTheme();
+  const { size: sideSheetSize, components: sideSheetComponents } = SideSheetPresets;
+  const { Header: SideSheetHeader, Content: SideSheetContent } = sideSheetComponents;
   const [alertDismissState, setAlertDismissState] = useState<AlertDismissState | null>(null);
   const [insightsAlertDismissState, setInsightsAlertDismissState] = useState<AlertDismissState | null>(null);
   const [showToast, setShowToast] = useState(false);
@@ -102,10 +122,40 @@ export default function OrganizationSettingsPage() {
   const showAlert = shouldShowAlert(features, alertDismissState);
   const showInsightsAlert = shouldShowAlert(features, insightsAlertDismissState, INSIGHTS_KEYS);
 
-  const changeCount = useMemo(
-    () => Object.keys(features).filter((k) => features[k].enabled !== saved[k].enabled).length,
-    [features, saved]
-  );
+  const changeCount = useMemo(() => {
+    const featureChanges = Object.keys(features).filter((k) => features[k].enabled !== saved[k].enabled).length;
+    const sourceChanges =
+      sourcePackIds.length !== committedSourcePackIds.length ||
+      sourcePackIds.some((id) => !committedSourcePackIds.includes(id))
+        ? 1
+        : 0;
+    const peerChanges =
+      peers.length !== committedPeers.length || peers.some((p) => !committedPeers.includes(p)) ? 1 : 0;
+    return (
+      featureChanges +
+      (webSearchEnabled !== savedWebSearchEnabled ? 1 : 0) +
+      sourceChanges +
+      peerChanges +
+      (peerFilingsEnabled !== savedPeerFilingsEnabled ? 1 : 0)
+    );
+  }, [
+    features,
+    saved,
+    webSearchEnabled,
+    savedWebSearchEnabled,
+    sourcePackIds,
+    committedSourcePackIds,
+    peers,
+    committedPeers,
+    peerFilingsEnabled,
+    savedPeerFilingsEnabled,
+  ]);
+
+  const toggleSourcePack = (id: string) =>
+    setSourcePackIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  const addPeer = (name: string) => setPeers((prev) => (prev.includes(name) ? prev : [...prev, name]));
+  const removePeer = (name: string) => setPeers((prev) => prev.filter((p) => p !== name));
+  const togglePeerFilings = () => setPeerFilingsEnabled((prev) => !prev);
 
   const toggleFeature = (key: string) => {
     const turningOff = features[key].enabled;
@@ -117,6 +167,10 @@ export default function OrganizationSettingsPage() {
       }
       return next;
     });
+    // Web search is a sub-option of Ask GovernAI — turning it off forces web search off too
+    if (key === "askGovernAI" && turningOff) {
+      setWebSearchEnabled(false);
+    }
     if (turningOff) {
       if (CHAT_ASSIST_KEYS.includes(key as (typeof CHAT_ASSIST_KEYS)[number])) {
         setAlertDismissState(null);
@@ -127,7 +181,10 @@ export default function OrganizationSettingsPage() {
     }
   };
 
+  const toggleWebSearch = () => setWebSearchEnabled((prev) => !prev);
+
   const smartPrepDisabled = !features.smartSummary.enabled;
+  const webSearchDisabled = !features.askGovernAI.enabled;
 
   const handleDismissAlert = () => {
     setAlertDismissState({
@@ -147,11 +204,21 @@ export default function OrganizationSettingsPage() {
 
   const handleSave = () => {
     setSaved(features);
+    setSavedWebSearchEnabled(webSearchEnabled);
+    setSavedPeerFilingsEnabled(peerFilingsEnabled);
+    commitSourcePackIds(sourcePackIds);
+    commitPeers(peers);
     setShowToast(true);
     if (toastTimer.current) clearTimeout(toastTimer.current);
     toastTimer.current = setTimeout(() => setShowToast(false), 5000);
   };
-  const handleCancel = () => setFeatures(saved);
+  const handleCancel = () => {
+    setFeatures(saved);
+    setWebSearchEnabled(savedWebSearchEnabled);
+    setPeerFilingsEnabled(savedPeerFilingsEnabled);
+    setSourcePackIds(committedSourcePackIds);
+    setPeers(committedPeers);
+  };
 
   return (
     <Box
@@ -302,101 +369,78 @@ export default function OrganizationSettingsPage() {
               </Typography>
             </Box>
 
-            {/* GovernAI section */}
-            <Stack gap="24px">
-              <Box>
-                <Typography
-                  sx={{ fontSize: 22, fontWeight: 400, color: "#242628", lineHeight: "28px" }}
-                >
-                  GovernAI
-                </Typography>
-                <Typography
-                  sx={{ fontSize: 10, color: "#5d5e61", lineHeight: "12px", mt: "8px" }}
-                >
-                  Manage AI-powered features for your organization.
-                </Typography>
-              </Box>
+            {/* Chat search section */}
+            <Stack gap="8px">
+              <Typography
+                sx={{ fontSize: 18, fontWeight: 400, color: "#242628", lineHeight: "28px" }}
+              >
+                Chat search
+              </Typography>
 
-              {/* Chat assistant subsection */}
-              <Stack gap="8px">
-                <Box>
+              {showAlert && (
+                <Box
+                  sx={{
+                    display: "flex",
+                    alignItems: "flex-start",
+                    gap: "8px",
+                    px: "12px",
+                    py: "10px",
+                    borderRadius: "8px",
+                    background: "#eef2ff",
+                    border: "1px solid #c7d2fe",
+                  }}
+                >
+                  <InfoOutlinedIcon sx={{ fontSize: 18, color: "#3730a3", mt: "1px", flexShrink: 0 }} />
                   <Typography
-                    sx={{ fontSize: 18, fontWeight: 400, color: "#242628", lineHeight: "28px" }}
-                  >
-                    Chat assistant
-                  </Typography>
-                  <Typography
-                    sx={{ fontSize: 10, color: "#5d5e61", lineHeight: "12px", mt: "8px" }}
-                  >
-                    Manage AI-powered features for your organization.
-                  </Typography>
-                </Box>
-
-                {showAlert && (
-                  <Box
                     sx={{
-                      display: "flex",
-                      alignItems: "flex-start",
-                      gap: "8px",
-                      px: "12px",
-                      py: "10px",
-                      borderRadius: "8px",
-                      background: "#eef2ff",
-                      border: "1px solid #c7d2fe",
+                      fontSize: 14,
+                      color: "#3730a3",
+                      lineHeight: "20px",
+                      letterSpacing: "0.2px",
+                      flex: 1,
                     }}
                   >
-                    <InfoOutlinedIcon sx={{ fontSize: 18, color: "#3730a3", mt: "1px", flexShrink: 0 }} />
-                    <Typography
-                      sx={{
-                        fontSize: 14,
-                        color: "#3730a3",
-                        lineHeight: "20px",
-                        letterSpacing: "0.2px",
-                        flex: 1,
-                      }}
-                    >
-                      Chat history is hidden, but kept when a feature is turned off and restored when it's turned back on.
-                    </Typography>
-                    <IconButton
-                      size="small"
-                      onClick={handleDismissAlert}
-                      sx={{ color: "#3730a3", p: "2px", flexShrink: 0, mt: "-2px" }}
-                      aria-label="Dismiss"
-                    >
-                      <CloseIcon sx={{ fontSize: 16 }} />
-                    </IconButton>
-                  </Box>
-                )}
-
-                <Box>
-                  <FeatureToggleRow
-                    feature={features.smartAssist}
-                    onToggle={() => toggleFeature("smartAssist")}
-                    divider
-                  />
-                  <FeatureToggleRow
-                    feature={features.aiBoardMember}
-                    onToggle={() => toggleFeature("aiBoardMember")}
-                    divider={false}
-                  />
+                    Chat history is hidden, but kept when a feature is turned off and restored when it's turned back on.
+                  </Typography>
+                  <IconButton
+                    size="small"
+                    onClick={handleDismissAlert}
+                    sx={{ color: "#3730a3", p: "2px", flexShrink: 0, mt: "-2px" }}
+                    aria-label="Dismiss"
+                  >
+                    <CloseIcon sx={{ fontSize: 16 }} />
+                  </IconButton>
                 </Box>
-              </Stack>
+              )}
+
+              <Box>
+                <FeatureToggleRow
+                  feature={features.askGovernAI}
+                  onToggle={() => toggleFeature("askGovernAI")}
+                  divider={false}
+                />
+                <WebSearchCheckboxRow
+                  checked={webSearchEnabled}
+                  onToggle={toggleWebSearch}
+                  disabled={webSearchDisabled}
+                />
+                <PublicSourcesTrigger
+                  selectedIds={sourcePackIds}
+                  peers={peers}
+                  peerFilingsEnabled={peerFilingsEnabled}
+                  disabled={webSearchDisabled || !webSearchEnabled}
+                  onOpen={() => setSourcesSheetOpen(true)}
+                />
+              </Box>
             </Stack>
 
-            {/* Insights section */}
+            {/* GovernAI Insights section */}
             <Stack gap="8px">
-              <Box>
-                <Typography
-                  sx={{ fontSize: 18, fontWeight: 400, color: "#242628", lineHeight: "28px" }}
-                >
-                  Insights
-                </Typography>
-                <Typography
-                  sx={{ fontSize: 10, color: "#5d5e61", lineHeight: "12px", mt: "8px" }}
-                >
-                  Manage AI-powered features for your organization.
-                </Typography>
-              </Box>
+              <Typography
+                sx={{ fontSize: 18, fontWeight: 400, color: "#242628", lineHeight: "28px" }}
+              >
+                GovernAI Insights
+              </Typography>
 
               {showInsightsAlert && (
                 <Box
@@ -632,6 +676,56 @@ export default function OrganizationSettingsPage() {
           </Stack>
         </Box>
       )}
+
+      {/* Public sources side sheet */}
+      <Drawer
+        open={sourcesSheetOpen}
+        onClose={() => setSourcesSheetOpen(false)}
+        sx={{ ...sideSheetSize.medium.sx }}
+        slotProps={{
+          paper: { role: "dialog", "aria-labelledby": "public-sources-title" },
+        }}
+      >
+        <SideSheetHeader
+          variant="default"
+          onClose={() => setSourcesSheetOpen(false)}
+          title="Public sources"
+          componentProps={{
+            closeButton: { "aria-label": "Close public sources" },
+            title: { component: "h2", id: "public-sources-title" },
+          }}
+        />
+        <SideSheetContent ariaLabel="Public sources content">
+          <SourcePacksPicker
+            selectedIds={sourcePackIds}
+            onToggle={toggleSourcePack}
+            peerFilingsEnabled={peerFilingsEnabled}
+            onTogglePeerFilings={togglePeerFilings}
+            peers={peers}
+            onAddPeer={addPeer}
+            onRemovePeer={removePeer}
+          />
+        </SideSheetContent>
+        <Footer
+          primaryAction={
+            <Button
+              variant="contained"
+              onClick={() => setSourcesSheetOpen(false)}
+              sx={{
+                textTransform: "none",
+                fontWeight: 600,
+                borderRadius: "8px",
+                background: "#0040d5",
+                boxShadow: "none",
+                "&:hover": { background: "#0035b3", boxShadow: "none" },
+              }}
+            >
+              Done
+            </Button>
+          }
+          horizontalPadding="medium"
+        />
+      </Drawer>
     </Box>
   );
 }
@@ -703,6 +797,106 @@ function FeatureToggleRow({ feature, onToggle, divider, disabled = false }: Feat
           }}
         />
       )}
+    </Box>
+  );
+}
+
+interface WebSearchCheckboxRowProps {
+  checked: boolean;
+  onToggle: () => void;
+  disabled: boolean;
+}
+
+// Sub-option of the Ask GovernAI toggle above it, following the same pattern as
+// "Administrators receive copies of book notifications" under Book notifications:
+// a checkbox (not a switch) indented under the parent feature, disabled when the
+// parent feature is off.
+function WebSearchCheckboxRow({ checked, onToggle, disabled }: WebSearchCheckboxRowProps) {
+  return (
+    <Box sx={{ pb: "12px", opacity: disabled ? 0.4 : 1 }}>
+      <FormControlLabel
+        sx={{ alignItems: "flex-start", ml: 0, gap: "8px" }}
+        control={
+          <Checkbox
+            checked={checked}
+            onChange={disabled ? undefined : onToggle}
+            disabled={disabled}
+            size="small"
+            sx={{ p: 0, mt: "2px", flexShrink: 0, width: "16px", height: "16px" }}
+          />
+        }
+        label={
+          <Box>
+            <Typography
+              sx={{ fontSize: 14, color: "#232429", lineHeight: "20px", letterSpacing: "0.2px" }}
+            >
+              Enable web search
+            </Typography>
+            <Typography sx={{ fontSize: 10, color: "#575a67", lineHeight: "12px", mt: "2px" }}>
+              Let Ask GovernAI search public websites when board materials don't have the answer.{" "}
+              <Link
+                href="#"
+                onClick={(e) => e.preventDefault()}
+                sx={{ fontSize: 10, fontWeight: 600, color: "#0040d5" }}
+              >
+                Learn more
+              </Link>
+            </Typography>
+          </Box>
+        }
+      />
+    </Box>
+  );
+}
+
+interface PublicSourcesTriggerProps {
+  selectedIds: string[];
+  peers: string[];
+  peerFilingsEnabled: boolean;
+  disabled: boolean;
+  onOpen: () => void;
+}
+
+// Indented under the "Enable web search" checkbox, same pattern as that
+// checkbox under Ask GovernAI. The picker's content now lives in the
+// "Public sources" side sheet; this row just summarizes the current
+// selection and opens it.
+function PublicSourcesTrigger({ selectedIds, peers, peerFilingsEnabled, disabled, onOpen }: PublicSourcesTriggerProps) {
+  const sourceCount = selectedIds.length;
+  const peerCount = peerFilingsEnabled ? peers.length : 0;
+  const summary =
+    [
+      sourceCount > 0 ? `${sourceCount} source${sourceCount === 1 ? "" : "s"}` : null,
+      peerCount > 0 ? `${peerCount} peer compan${peerCount === 1 ? "y" : "ies"}` : null,
+    ]
+      .filter(Boolean)
+      .join(" · ") || "No sources selected";
+
+  return (
+    <Box sx={{ pl: "26px", pb: "12px", opacity: disabled ? 0.4 : 1 }}>
+      <Typography sx={{ fontSize: 14, color: "#232429", lineHeight: "20px", letterSpacing: "0.2px" }}>
+        Public sources
+      </Typography>
+      <Typography sx={{ fontSize: 10, color: "#575a67", lineHeight: "12px", mt: "2px", mb: "8px" }}>
+        {summary}
+      </Typography>
+      <Button
+        variant="outlined"
+        size="small"
+        onClick={disabled ? undefined : onOpen}
+        disabled={disabled}
+        sx={{
+          textTransform: "none",
+          fontWeight: 600,
+          fontSize: 13,
+          color: "#242628",
+          borderColor: "#8f9193",
+          borderRadius: "8px",
+          "&:hover": { borderColor: "#242628", background: "transparent" },
+        }}
+      >
+        Manage sources
+      </Button>
     </Box>
   );
 }

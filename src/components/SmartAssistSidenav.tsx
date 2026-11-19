@@ -1,12 +1,20 @@
-import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
+import React, { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
 import smartAssistAvatarUrl from "../assets/smart-assist-avatar.svg";
 import {
   Box,
   Button,
+  Chip,
+  Divider,
   Drawer,
   IconButton,
   InputBase,
+  Menu,
+  MenuItem,
+  MenuList,
+  Paper,
+  Popper,
   Stack,
+  Switch,
   Tab,
   Tabs,
   Tooltip,
@@ -22,7 +30,6 @@ import {
   AIChatMessageAvatar,
   AIChatMessageTextBlock,
   AIChatMessageFooter,
-  AIChatThinkingIndicator,
   AIChatTimestamp,
 } from "@diligentcorp/atlas-react-bundle";
 
@@ -44,13 +51,23 @@ import MessageIcon from "@diligentcorp/atlas-react-bundle/icons/Message";
 import PinIcon from "@diligentcorp/atlas-react-bundle/icons/Pin";
 import ReloadIcon from "@diligentcorp/atlas-react-bundle/icons/Reload";
 import TaskIcon from "@diligentcorp/atlas-react-bundle/icons/Task";
+import AuditAnalyticsIcon from "@diligentcorp/atlas-react-bundle/icons/AuditAnalytics";
+import BriefcaseIcon from "@diligentcorp/atlas-react-bundle/icons/Briefcase";
+import LockedIcon from "@diligentcorp/atlas-react-bundle/icons/Locked";
+import ReportsIcon from "@diligentcorp/atlas-react-bundle/icons/Reports";
+import RiskEssentialsIcon from "@diligentcorp/atlas-react-bundle/icons/RiskEssentials";
+import StrategyIcon from "@diligentcorp/atlas-react-bundle/icons/Strategy";
+import TargetIcon from "@diligentcorp/atlas-react-bundle/icons/Target";
 
-import { type ChatThread } from "../data/hybrid-search.constants.js";
+import { type ChatThread, STATIC_CHAT_THREADS } from "../data/hybrid-search.constants.js";
 import RichAIMessageContent, { parseCiteText } from "./RichAIMessageContent.js";
 import SourcesBlock from "./SourcesBlock.js";
-import SourcesFilterButton from "./SourcesFilterButton.js";
+import WebSearchComposerChip from "./webSearch/WebSearchComposerChip.js";
+import { MessageReasoning, PendingReasoning, WebSearchOfferCard } from "./webSearch/WebSearchMessageParts.js";
 import SuggestionChips from "./SuggestionChips.js";
 import AIMoreMenu from "./AIMoreMenu.js";
+import GiveFeedbackDialog, { FEEDBACK_FEATURES } from "./GiveFeedbackDialog.js";
+import SourceFeedbackBanner from "./webSearch/SourceFeedbackBanner.js";
 import ChatThreadItem from "./ChatThreadItem.js";
 import DeleteAllChatsMenu from "./DeleteAllChatsMenu.js";
 import { useSmartAssist } from "../context/SmartAssistContext.js";
@@ -61,6 +78,19 @@ const AI_GRADIENT = "linear-gradient(90deg, #be0c1e 0%, #ab48da 50%, #4069fe 100
 const THREAD_BG = "linear-gradient(135deg, #f9f9fc 31%, #fcfcff 100%)";
 const AI_PURPLE = "#ab48da";
 const DRAWER_WIDTH = 440;
+
+const EXPERT_SKILLS: { id: string; label: string; desc: string; slash: string; Icon: React.ElementType }[] = [
+  { id: "audit",    label: "Audit & financial", desc: "Financial reporting, controls, the auditor",     slash: "/audit",    Icon: AuditAnalyticsIcon },
+  { id: "risk",     label: "Enterprise risk",   desc: "Strategic & operational risk, concentrations",   slash: "/risk",     Icon: RiskEssentialsIcon },
+  { id: "cyber",    label: "Cyber & privacy",   desc: "Security, data protection, third parties",       slash: "/cyber",    Icon: LockedIcon },
+  { id: "strategy", label: "Strategy",          desc: "Board-level strategy & execution",               slash: "/strategy", Icon: StrategyIcon },
+];
+
+const AGENT_REPORTING: { id: string; label: string; tag: string; desc: string; Icon: React.ElementType }[] = [
+  { id: "brief",         label: "Summarize & brief",  tag: "@briefcase",      desc: "Quick research synthesized into a board-ready brief.",             Icon: BriefcaseIcon },
+  { id: "diligence",     label: "Due diligence", tag: "@diligence",      desc: "Multi-area research with risk assessment and executive summary.",   Icon: ReportsIcon },
+  { id: "followthrough", label: "Track commitments",  tag: "@follow-through", desc: "Tracks who owns what and what's overdue.",                         Icon: TargetIcon },
+];
 
 // ─── Composer toolbar icons ───────────────────────────────────────────────────
 
@@ -93,6 +123,67 @@ function ChatMicrophoneIcon() {
     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
       <path d="M12.5 14C11.8013 14 11.2099 13.758 10.7259 13.274C10.242 12.79 10 12.1987 10 11.5V5.49998C10 4.80128 10.242 4.20993 10.7259 3.72595C11.2099 3.24198 11.8013 3 12.5 3C13.1987 3 13.79 3.24198 14.274 3.72595C14.758 4.20993 15 4.80128 15 5.49998V11.5C15 12.1987 14.758 12.79 14.274 13.274C13.79 13.758 13.1987 14 12.5 14ZM11.75 21.25V17.9538C10.1 17.7653 8.72917 17.0576 7.6375 15.8307C6.54583 14.6038 6 13.1602 6 11.5H7.49997C7.49997 12.8833 7.98747 14.0625 8.96247 15.0375C9.93747 16.0125 11.1166 16.5 12.5 16.5C13.8833 16.5 15.0625 16.0125 16.0375 15.0375C17.0125 14.0625 17.5 12.8833 17.5 11.5H19C19 13.1602 18.4541 14.6038 17.3625 15.8307C16.2708 17.0576 14.8999 17.7653 13.2499 17.9538V21.25H11.75ZM12.5 12.5C12.7833 12.5 13.0208 12.4041 13.2125 12.2125C13.4041 12.0208 13.5 11.7833 13.5 11.5V5.49998C13.5 5.21664 13.4041 4.97914 13.2125 4.78748C13.0208 4.59581 12.7833 4.49998 12.5 4.49998C12.2166 4.49998 11.9791 4.59581 11.7875 4.78748C11.5958 4.97914 11.5 5.21664 11.5 5.49998V11.5C11.5 11.7833 11.5958 12.0208 11.7875 12.2125C11.9791 12.4041 12.2166 12.5 12.5 12.5Z" fill="currentColor"/>
     </svg>
+  );
+}
+
+// ─── Project item ─────────────────────────────────────────────────────────────
+
+function ProjectItem({ project, children, onLoadThread }: {
+  project: ChatThread;
+  children: ChatThread[];
+  onLoadThread: (t: ChatThread) => void;
+}) {
+  const { tokens: { semantic: { color } } } = useTheme();
+  const [open, setOpen] = useState(true);
+
+  return (
+    <Box>
+      <Box
+        component="button"
+        onClick={() => setOpen(o => !o)}
+        sx={{
+          all: "unset", boxSizing: "border-box", cursor: "pointer",
+          display: "flex", width: "100%", px: "4px", py: "8px",
+          borderRadius: "8px", alignItems: "center", gap: "8px",
+          "&:hover": { backgroundColor: "rgba(0,0,0,0.04)" },
+        }}
+      >
+        <Box sx={{ flexShrink: 0, display: "flex", alignItems: "center", color: color.type.default.value }}>
+          <FolderIcon size="md" />
+        </Box>
+        <Box sx={{ flex: "1 1 0", fontSize: "12px", fontWeight: 400, lineHeight: "16px", color: color.type.default.value, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {project.title}
+        </Box>
+        <Box sx={{ flexShrink: 0, display: "flex", alignItems: "center", color: color.type.muted.value }}>
+          {open
+            ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M11.9997 16.7077L5.3457 10.0537L6.404 8.99536L11.9997 14.591L17.5953 8.99536L18.6537 10.0537L11.9997 16.7077Z" fill="currentColor"/></svg>
+            : <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M13.9463 12.0003L8.35059 6.40466L9.4089 5.34636L15.5089 11.4003L15.063 11.9462L9.4089 18.654L8.35059 17.5957L13.9463 12.0003Z" fill="currentColor"/></svg>}
+        </Box>
+      </Box>
+      {open && children.length > 0 && (
+        <Box sx={{ pl: "20px", display: "flex" }}>
+          <Box sx={{ flex: "1 1 0" }}>
+            {children.map(child => (
+              <Box
+                key={child.id}
+                component="button"
+                onClick={() => onLoadThread(child)}
+                sx={{
+                  all: "unset", boxSizing: "border-box", cursor: "pointer",
+                  display: "flex", width: "100%", px: "8px", py: "6px",
+                  borderRadius: "8px",
+                  fontSize: "12px", lineHeight: "16px", color: color.type.default.value,
+                  overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                  "&:hover": { backgroundColor: "rgba(0,0,0,0.04)" },
+                }}
+              >
+                {child.title}
+              </Box>
+            ))}
+          </Box>
+        </Box>
+      )}
+    </Box>
   );
 }
 
@@ -135,13 +226,8 @@ export default function SmartAssistSidenav({
     consumeComposerFocus,
     requestPersonalization,
     handleSend,
-    handleToggleSource,
     inBook,
     currentBookTitle,
-    bookScopeTitle,
-    isBookScope,
-    setBookScope,
-    setGlobalScope,
     composerPlaceholder,
     resetChat,
     deleteAllThreads,
@@ -155,7 +241,31 @@ export default function SmartAssistSidenav({
     selectedInsight,
     setSelectedInsight,
     setAudience,
+    webSearchEnabled,
+    turnOnWebSearch,
+    turnOffWebSearch,
+    reasoningPending,
+    demoMode,
+    wsDemoMode,
+    activeDemoSteps,
+    activeDemoDirector,
+    demoStepsDone,
+    cycleComposerPrompt,
+    showSourceFeedbackBanner,
+    dismissSourceFeedbackBanner,
   } = useSmartAssist();
+
+  // Web-search demo: clicking the empty composer drops in the next scripted
+  // prompt; every additional click (even with text already present) previews
+  // the next one — mirrors the overlay/home-page composer.
+  // Ignores clicks/focus that land on a button inside the composer (Tools,
+  // attach, mic, send) — those are real actions, not "I want the next prompt".
+  const prefillDemoPrompt = (e?: { target: EventTarget | null }) => {
+    if (e?.target instanceof HTMLElement && e.target.closest("button, [role=\"button\"], a")) return;
+    if (wsDemoMode) { cycleComposerPrompt(); return; }
+    const next = activeDemoSteps[demoStepsDone];
+    if (demoMode && next && !isGenerating && !prompt.trim()) setPrompt(next.prompt);
+  };
 
   useEffect(() => {
     setAudience(audience);
@@ -163,6 +273,8 @@ export default function SmartAssistSidenav({
 
   const [smartAssistView, setSmartAssistView] = useState<"new-chat" | "thread-list">("new-chat");
   const [moreMenuAnchor, setMoreMenuAnchor] = useState<HTMLElement | null>(null);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [feedbackSeedFeature, setFeedbackSeedFeature] = useState<(typeof FEEDBACK_FEATURES)[number] | undefined>(undefined);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const composerInputRef = useRef<HTMLTextAreaElement>(null);
   // The composer wrapper element, used to anchor the suggestion dropdown above
@@ -170,9 +282,19 @@ export default function SmartAssistSidenav({
   const [composerAnchor, setComposerAnchor] = useState<HTMLDivElement | null>(null);
 
   // Thread-list section collapse state
-  const [pinnedIds] = useState<Set<string>>(() =>
-    audience === "director" ? new Set(threads.slice(0, 2).map(t => t.id)) : new Set<string>()
+  const [pinnedIds, setPinnedIds] = useState<Set<string>>(() =>
+    audience === "director"
+      ? new Set(threads.filter(t => STATIC_CHAT_THREADS.some(s => s.id === t.id)).slice(0, 2).map(t => t.id))
+      : new Set<string>()
   );
+  const handlePin = (id: string, currentlyPinned: boolean) => {
+    setPinnedIds(prev => {
+      const next = new Set(prev);
+      if (currentlyPinned) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
   const [pinsOpen, setPinsOpen] = useState(true);
   const [projectsOpen, setProjectsOpen] = useState(true);
   const [historyOpen, setHistoryOpen] = useState(true);
@@ -180,7 +302,45 @@ export default function SmartAssistSidenav({
   // Composer toolbar state
   const [extendedThinking, setExtendedThinking] = useState(false);
   const [toolsMenuAnchor, setToolsMenuAnchor] = useState<HTMLElement | null>(null);
+  const [expertSkillsAnchor, setExpertSkillsAnchor] = useState<HTMLElement | null>(null);
+  const [agentReportingAnchor, setAgentReportingAnchor] = useState<HTMLElement | null>(null);
+  const [searchScopeAnchor, setSearchScopeAnchor] = useState<HTMLElement | null>(null);
   const attachmentInputRef = useRef<HTMLInputElement>(null);
+  const [searchScope, setSearchScope] = useState<"books" | "resource" | "dataroom" | "tasks" | "decisions" | "questionnaires" | "book" | null>(inBook ? "book" : null);
+  const [activeExpertSkill, setActiveExpertSkill] = useState<string | null>(null);
+  const [activeAgentMode, setActiveAgentMode] = useState<string | null>(null);
+  const [deepResearchActive, setDeepResearchActive] = useState(false);
+  const submenuDelayRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Turning web search on closes the menu so the first-use disclosure dialog has focus.
+  // The shared web search flow (disclosure, persistence, scripted answers) is
+  // admin-side only. The director view keeps its original local switch.
+  const webShared = (audience === "admin" && !demoMode) || wsDemoMode;
+  const [localWebOn, setLocalWebOn] = useState(false);
+  const webOn = webShared ? webSearchEnabled : localWebOn;
+  const toggleWebSearch = () => {
+    if (!webShared) { setLocalWebOn((v) => !v); return; }
+    if (webSearchEnabled) { turnOffWebSearch(); return; }
+    closeToolsMenus();
+    turnOnWebSearch();
+  };
+  const closeToolsMenus = () => { if (submenuDelayRef.current) clearTimeout(submenuDelayRef.current); setToolsMenuAnchor(null); setExpertSkillsAnchor(null); setAgentReportingAnchor(null); setSearchScopeAnchor(null); };
+  const activeExpertSkillData = activeExpertSkill ? (EXPERT_SKILLS.find(s => s.id === activeExpertSkill) ?? null) : null;
+  const activeAgentModeData = activeAgentMode ? (AGENT_REPORTING.find(a => a.id === activeAgentMode) ?? null) : null;
+  const searchScopeLabel = searchScope === "book" ? (currentBookTitle ?? "This book") : searchScope === "resource" ? "Resource center" : searchScope === "dataroom" ? "Data room" : searchScope === "tasks" ? "Tasks" : searchScope === "decisions" ? "Decision hub" : searchScope === "questionnaires" ? "Questionnaires" : searchScope === "books" ? "Current & archived books" : "";
+  const activeToolsItem = searchScopeAnchor ? "scope" : expertSkillsAnchor ? "expert" : agentReportingAnchor ? "agent" : null;
+
+  const scopedPlaceholder = "Ask anything about your board materials";
+
+  // Extended thinking phase animation
+  const THINKING_PHASES = ["Searching documents", "Analyzing context", "Composing response"];
+  const [thinkingPhaseIdx, setThinkingPhaseIdx] = useState(0);
+  useEffect(() => {
+    if (!extendedThinking || !isGenerating) { setThinkingPhaseIdx(0); return; }
+    setThinkingPhaseIdx(0);
+    const t1 = setTimeout(() => setThinkingPhaseIdx(1), 700);
+    const t2 = setTimeout(() => setThinkingPhaseIdx(2), 1300);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, [isGenerating, extendedThinking]);
 
   const pinnedThreads = threads.filter(t => pinnedIds.has(t.id));
   const unpinnedThreads = threads.filter(t => !pinnedIds.has(t.id));
@@ -263,6 +423,11 @@ export default function SmartAssistSidenav({
     if (!el) return;
     el.scrollTo({ top: el.scrollHeight, behavior: smooth ? "smooth" : "auto" });
   };
+
+  // Keep live web search reasoning in view as its steps progress.
+  useEffect(() => {
+    if (reasoningPending) setTimeout(() => scrollChatToBottom(true), 50);
+  }, [reasoningPending?.active, Boolean(reasoningPending)]);
 
   // When panel mounts/opens with an active thread, show the chat (not the
   // thread list) and jump to the latest message before paint — useLayoutEffect
@@ -381,7 +546,7 @@ export default function SmartAssistSidenav({
             <Tabs
               value={activeTab}
               onChange={(_, v) => handleTabChange(v)}
-              aria-label="Smart Assist sections"
+              aria-label="Ask GovernAI sections"
               // The group's continuous bottom divider ships at zIndex -1, which
               // hides it behind the panel background and leaves a gap between the
               // per-tab dividers. Lift it to 0 so it reads as one edge-to-edge
@@ -508,12 +673,12 @@ export default function SmartAssistSidenav({
                       message={msg.content}
                       header={
                         <AIChatMessageHeader
-                          name={audience === "director" ? "Josh Doe" : "Jane Doe"}
+                          name={demoMode ? activeDemoDirector.name : audience === "director" ? "Josh Doe" : "Jane Doe"}
                           time={msg.timestamp}
                           avatar={
                             <AIChatMessageAvatar
-                              uniqueId={audience === "director" ? "josh-doe" : "jane-doe"}
-                              initials="JD"
+                              uniqueId={demoMode ? activeDemoDirector.id : audience === "director" ? "josh-doe" : "jane-doe"}
+                              initials={demoMode ? activeDemoDirector.initials : "JD"}
                             />
                           }
                           slotProps={{ root: { sx: { flexDirection: "row-reverse" } } }}
@@ -548,12 +713,14 @@ export default function SmartAssistSidenav({
                         />
                       }
                     >
+                      <MessageReasoning msg={msg} />
                       {msg.richContent
                         ? <RichAIMessageContent blocks={msg.richContent} sources={msg.sources} messageId={msg.id} />
                         : /\[\d+\]/.test(msg.content) && msg.sources
                           ? <RichAIMessageContent blocks={[{ type: "p", spans: parseCiteText(msg.content) }]} sources={msg.sources} messageId={msg.id} />
                           : <AIChatMessageTextBlock>{msg.content}</AIChatMessageTextBlock>
                       }
+                      <WebSearchOfferCard msg={msg} />
                       {msg.sources && msg.sources.length > 0 && (
                         <SourcesBlock sources={msg.sources} messageId={msg.id} />
                       )}
@@ -571,7 +738,7 @@ export default function SmartAssistSidenav({
                     />
                   }
                 >
-                  <AIChatThinkingIndicator label="Thinking" />
+                  <PendingReasoning fallbackLabel={extendedThinking ? THINKING_PHASES[thinkingPhaseIdx] : "Thinking"} />
                 </AIChatAIMessage>
               )}
               <div ref={messagesEndRef} />
@@ -583,7 +750,9 @@ export default function SmartAssistSidenav({
 
       {/* ── Smart Assist tab — thread list ── */}
       {effectiveTab === 0 && smartAssistView === "thread-list" && (
+        <>
         <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto", background: THREAD_BG, pt: "8px", px: "12px", pb: "16px" }}>
+
 
           {/* New chat */}
           <Box sx={{ px: "4px", mb: "4px" }}>
@@ -644,12 +813,14 @@ export default function SmartAssistSidenav({
                 pinnedThreads.length === 0 ? (
                   <Typography sx={{ fontSize: "12px", lineHeight: "16px", color: color.type.muted.value, pl: "20px", pt: "2px" }}>No pinned items</Typography>
                 ) : (
-                  <Box sx={{ pl: "16px", display: "flex", gap: "4px" }}>
-                    <Box sx={{ width: "1px", alignSelf: "stretch", backgroundColor: "#DEE0E9", flexShrink: 0 }} />
+                  <Box sx={{ pl: "16px", display: "flex" }}>
                     <Box sx={{ flex: "1 1 0" }}>
                       {pinnedThreads.map((thread) => (
-                        <ChatThreadItem key={thread.id} thread={thread} variant="sidenav" onLoadThread={handleLoadThread} onNewChat={handleNewChat} />
+                        <ChatThreadItem key={thread.id} thread={thread} variant="sidenav" onLoadThread={handleLoadThread} onNewChat={handleNewChat} isPinned onPin={handlePin} />
                       ))}
+                      <Box component="button" sx={{ all: "unset", cursor: "pointer", display: "flex", pl: "12px", pr: "4px", py: "8px", borderRadius: "12px", "&:hover": { opacity: 0.8 } }}>
+                        <Box sx={{ color: "#1C4EE4", fontSize: "12px", fontWeight: 400, lineHeight: "16px" }}>View all</Box>
+                      </Box>
                     </Box>
                   </Box>
                 )
@@ -672,9 +843,25 @@ export default function SmartAssistSidenav({
                   </Box>
                 </Box>
               </Box>
-              {projectsOpen && (
-                <Typography sx={{ fontSize: "12px", lineHeight: "16px", color: color.type.muted.value, pl: "20px", pt: "2px" }}>No projects yet</Typography>
-              )}
+              {projectsOpen && (() => {
+                const staticProjects = STATIC_CHAT_THREADS.filter(t => t.isProject);
+                if (staticProjects.length === 0) {
+                  return <Typography sx={{ fontSize: "12px", lineHeight: "16px", color: color.type.muted.value, pl: "20px", pt: "2px" }}>No projects yet</Typography>;
+                }
+                return (
+                  <Box sx={{ pl: "16px", display: "flex" }}>
+                    <Box sx={{ flex: "1 1 0" }}>
+                      {staticProjects.map(project => {
+                        const children = STATIC_CHAT_THREADS.filter(t => t.projectId === project.id);
+                        return <ProjectItem key={project.id} project={project} children={children} onLoadThread={handleLoadThread} />;
+                      })}
+                      <Box component="button" sx={{ all: "unset", cursor: "pointer", display: "flex", pl: "12px", pr: "4px", py: "8px", borderRadius: "12px", "&:hover": { opacity: 0.8 } }}>
+                        <Box sx={{ color: "#1C4EE4", fontSize: "12px", fontWeight: 400, lineHeight: "16px" }}>View all</Box>
+                      </Box>
+                    </Box>
+                  </Box>
+                );
+              })()}
             </Box>
 
             {/* Chat history */}
@@ -699,12 +886,14 @@ export default function SmartAssistSidenav({
                 unpinnedThreads.length === 0 ? (
                   <Typography sx={{ fontSize: "12px", lineHeight: "16px", color: color.type.muted.value, pl: "20px", pt: "2px" }}>No recent chats</Typography>
                 ) : (
-                  <Box sx={{ pl: "16px", display: "flex", gap: "4px" }}>
-                    <Box sx={{ width: "1px", alignSelf: "stretch", backgroundColor: "#DEE0E9", flexShrink: 0 }} />
+                  <Box sx={{ pl: "16px", display: "flex" }}>
                     <Box sx={{ flex: "1 1 0" }}>
                       {unpinnedThreads.map((thread) => (
-                        <ChatThreadItem key={thread.id} thread={thread} variant="sidenav" onLoadThread={handleLoadThread} onNewChat={handleNewChat} />
+                        <ChatThreadItem key={thread.id} thread={thread} variant="sidenav" onLoadThread={handleLoadThread} onNewChat={handleNewChat} isPinned={false} onPin={handlePin} />
                       ))}
+                      <Box component="button" sx={{ all: "unset", cursor: "pointer", display: "flex", pl: "12px", pr: "4px", py: "8px", borderRadius: "12px", "&:hover": { opacity: 0.8 } }}>
+                        <Box sx={{ color: "#1C4EE4", fontSize: "12px", fontWeight: 400, lineHeight: "16px" }}>View all</Box>
+                      </Box>
                     </Box>
                   </Box>
                 )
@@ -712,7 +901,75 @@ export default function SmartAssistSidenav({
             </Box>
 
           </Box>
+
         </Box>
+        {/* Thread-list sticky footer */}
+        <Box
+          sx={{
+            flexShrink: 0,
+            borderTop: `1px solid ${color.ui.divider.default.value}`,
+            px: "4px",
+            py: "8px",
+            backgroundColor: color.surface.default.value,
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+          }}
+        >
+          {/* Expert skills */}
+          <Box
+            component="button"
+            sx={{ all: "unset", boxSizing: "border-box", cursor: "pointer", display: "flex" }}
+          >
+            <Box
+              sx={{
+                display: "flex",
+                alignItems: "center",
+                gap: "12px",
+                px: "12px",
+                py: "8px",
+                borderRadius: "12px",
+                "&:hover": { backgroundColor: "rgba(0,0,0,0.04)" },
+              }}
+            >
+              <Box sx={{ flexShrink: 0, display: "flex", alignItems: "center", color: color.type.default.value }}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M11.2213 14.7884H12.7789L12.8905 13.7019C13.0879 13.6519 13.2729 13.5791 13.4453 13.4836C13.6177 13.3881 13.7649 13.2698 13.8867 13.1288L14.8636 13.5807L15.6424 12.2558L14.777 11.6115C14.8488 11.4077 14.8847 11.2038 14.8847 11C14.8847 10.7961 14.8488 10.5923 14.777 10.3884L15.6424 9.7442L14.8636 8.41923L13.8867 8.87115C13.7649 8.73012 13.6177 8.61184 13.4453 8.51633C13.2729 8.42081 13.0879 8.34805 12.8905 8.29805L12.7789 7.21153H11.2213L11.1097 8.29805C10.9123 8.34805 10.7274 8.42081 10.5549 8.51633C10.3825 8.61184 10.2354 8.73012 10.1136 8.87115L9.13667 8.41923L8.35784 9.7442L9.22322 10.3884C9.15142 10.5923 9.11552 10.7961 9.11552 11C9.11552 11.2038 9.15142 11.4077 9.22322 11.6115L8.35784 12.2558L9.13667 13.5807L10.1136 13.1288C10.2354 13.2698 10.3825 13.3881 10.5549 13.4836C10.7274 13.5791 10.9123 13.6519 11.1097 13.7019L11.2213 14.7884ZM12.0001 12.6827C11.5322 12.6827 11.1347 12.5192 10.8078 12.1923C10.4809 11.8654 10.3174 11.4679 10.3174 11C10.3174 10.532 10.4809 10.1346 10.8078 9.80765C11.1347 9.48073 11.5322 9.31728 12.0001 9.31728C12.4681 9.31728 12.8655 9.48073 13.1924 9.80765C13.5194 10.1346 13.6828 10.532 13.6828 11C13.6828 11.4679 13.5194 11.8654 13.1924 12.1923C12.8655 12.5192 12.4681 12.6827 12.0001 12.6827ZM6.50014 21.5V17.4692C5.55014 16.6025 4.81264 15.6093 4.28764 14.4894C3.76264 13.3695 3.50014 12.2032 3.50014 10.9904C3.50014 8.6314 4.32707 6.6266 5.98092 4.97595C7.63475 3.32532 9.64115 2.5 12.0001 2.5C13.9424 2.5 15.6793 3.08045 17.2107 4.24135C18.7421 5.40225 19.7366 6.90833 20.1943 8.7596L21.6308 14.5H18.5001V19.5H14.5001V21.5H13.0001V18H17.0001V13H19.7001L18.7501 9.12498C18.3668 7.60189 17.5469 6.36696 16.2905 5.42018C15.0341 4.47338 13.604 3.99998 12.0001 3.99998C10.0668 3.99998 8.41678 4.67658 7.05012 6.02978C5.68345 7.38299 5.00012 9.02627 5.00012 10.9596C5.00012 11.9596 5.20428 12.908 5.61262 13.8048C6.02095 14.7016 6.60012 15.5 7.35012 16.2L8.00012 16.8V21.5H6.50014Z" fill="currentColor"/>
+                </svg>
+              </Box>
+              <Box sx={{ fontSize: "14px", fontWeight: 400, lineHeight: "20px", letterSpacing: "0.2px", color: color.type.default.value }}>
+                Expert skills
+              </Box>
+            </Box>
+          </Box>
+
+          {/* Preferences */}
+          <Box
+            component="button"
+            onClick={requestPersonalization}
+            sx={{ all: "unset", boxSizing: "border-box", cursor: "pointer", display: "flex" }}
+          >
+            <Box
+              sx={{
+                display: "flex",
+                alignItems: "center",
+                gap: "12px",
+                px: "12px",
+                py: "8px",
+                borderRadius: "12px",
+                "&:hover": { backgroundColor: "rgba(0,0,0,0.04)" },
+              }}
+            >
+              <Box sx={{ flexShrink: 0, display: "flex", alignItems: "center", color: color.type.default.value }}>
+                <SettingsIcon size="md" />
+              </Box>
+              <Box sx={{ fontSize: "14px", fontWeight: 400, lineHeight: "20px", letterSpacing: "0.2px", color: color.type.default.value }}>
+                Preferences
+              </Box>
+            </Box>
+          </Box>
+        </Box>
+        </>
       )}
 
       {/* ── Insights tab — feature list ── */}
@@ -868,7 +1125,13 @@ export default function SmartAssistSidenav({
       )}
 
       {/* ── Input area (Smart Assist / new chat only) ── */}
-      {showInput && <Box ref={setComposerAnchor} sx={{ position: "relative", flexShrink: 0, backgroundColor: color.surface.default.value }}>
+      {showInput && <Box ref={setComposerAnchor} onFocus={prefillDemoPrompt} onClick={prefillDemoPrompt} sx={{ position: "relative", flexShrink: 0, backgroundColor: color.surface.default.value }}>
+        {showSourceFeedbackBanner && (
+          <SourceFeedbackBanner
+            onGiveFeedback={() => { setFeedbackSeedFeature("Ask GovernAI"); setFeedbackOpen(true); }}
+            onDismiss={dismissSourceFeedbackBanner}
+          />
+        )}
         {/* AI gradient highlight top border */}
         <Box
           sx={{
@@ -902,7 +1165,7 @@ export default function SmartAssistSidenav({
               handleSend(prompt);
             }
           }}
-          placeholder={composerPlaceholder}
+          placeholder={scopedPlaceholder}
           sx={{
             color: color.type.default.value,
             "& .MuiInputBase-input": { padding: "16px 24px 12px !important", height: "80px !important", overflow: "auto !important", fontSize: "14px !important", lineHeight: "20px !important" },
@@ -934,41 +1197,54 @@ export default function SmartAssistSidenav({
             <Tooltip title="Tools">
               <IconButton
                 size="small"
-                onClick={(e) => setToolsMenuAnchor(toolsMenuAnchor ? null : e.currentTarget)}
+                onClick={(e) => { e.stopPropagation(); setToolsMenuAnchor(toolsMenuAnchor ? null : e.currentTarget); }}
+                onFocus={(e) => e.stopPropagation()}
                 sx={{ width: 32, height: 32, p: "4px", borderRadius: "8px", color: color.type.default.value }}
               >
                 <ToolsSliderIcon />
               </IconButton>
             </Tooltip>
-            <SourcesFilterButton
-              sources={sources}
-              onToggle={handleToggleSource}
-              mvp={{
-                inBook,
-                currentBookTitle,
-                bookScopeTitle,
-                isBookScope,
-                onSelectBook: setBookScope,
-                onSelectGlobal: setGlobalScope,
-              }}
-            />
+            <WebSearchComposerChip enabled={webOn} onTurnOff={() => (webShared ? turnOffWebSearch() : setLocalWebOn(false))} />
+            {searchScope !== null && (
+              <Chip
+                variant="outlined"
+                size="small"
+                icon={<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M15.8894 16.6474L10.9263 11.6843C10.5096 12.0005 10.0527 12.2454 9.55559 12.4191C9.05848 12.5927 8.54553 12.6795 8.01674 12.6795C6.71694 12.6795 5.61196 12.2245 4.7018 11.3146C3.79163 10.4047 3.33655 9.30026 3.33655 8.00133C3.33655 6.70238 3.79151 5.59751 4.70142 4.68672C5.61134 3.77595 6.71577 3.32056 8.01471 3.32056C9.31365 3.32056 10.4185 3.77564 11.3293 4.68581C12.2401 5.59597 12.6955 6.70095 12.6955 8.00074C12.6955 8.54556 12.606 9.06653 12.427 9.56364C12.2481 10.0608 12.0058 10.5096 11.7003 10.9103L16.6634 15.8734L15.8894 16.6474ZM8.01601 11.5962C9.02028 11.5962 9.87071 11.2479 10.5673 10.5513C11.2639 9.85472 11.6122 9.00429 11.6122 8.00002C11.6122 6.99574 11.2639 6.14531 10.5673 5.44872C9.87071 4.75214 9.02028 4.40385 8.01601 4.40385C7.01173 4.40385 6.1613 4.75214 5.46471 5.44872C4.76815 6.14531 4.41986 6.99574 4.41986 8.00002C4.41986 9.00429 4.76815 9.85472 5.46471 10.5513C6.1613 11.2479 7.01173 11.5962 8.01601 11.5962Z" fill="currentColor"/></svg>}
+                label={searchScopeLabel}
+                onDelete={() => setSearchScope(inBook ? "book" : null)}
+                sx={{ alignSelf: "center", height: 24, borderRadius: "9999px", borderColor: "#888B9A", fontSize: "12px", fontWeight: 400, lineHeight: "16px", color: color.type.default.value, "& .MuiChip-icon": { color: color.type.default.value, width: 16, height: 16, ml: "6px", flexShrink: 0 } }}
+              />
+            )}
+            {activeExpertSkillData && (
+              <Chip
+                variant="outlined"
+                size="small"
+                label={activeExpertSkillData.label}
+                onDelete={() => setActiveExpertSkill(null)}
+                sx={{ alignSelf: "center", height: 24, borderRadius: "9999px", borderColor: "#888B9A", fontSize: "12px", fontWeight: 400, lineHeight: "16px", color: color.type.default.value }}
+              />
+            )}
+            {activeAgentModeData && (
+              <Chip
+                variant="outlined"
+                size="small"
+                label={activeAgentModeData.label}
+                onDelete={() => setActiveAgentMode(null)}
+                sx={{ alignSelf: "center", height: 24, borderRadius: "9999px", borderColor: "#888B9A", fontSize: "12px", fontWeight: 400, lineHeight: "16px", color: color.type.default.value }}
+              />
+            )}
+            {deepResearchActive && (
+              <Chip
+                variant="outlined"
+                size="small"
+                label="Deep research"
+                onDelete={() => setDeepResearchActive(false)}
+                sx={{ alignSelf: "center", height: 24, borderRadius: "9999px", borderColor: "#888B9A", fontSize: "12px", fontWeight: 400, lineHeight: "16px", color: color.type.default.value }}
+              />
+            )}
           </Stack>
           {/* Trailing: extended thinking + voice + submit */}
           <Stack direction="row" alignItems="center" gap="4px">
-            <Tooltip title="Extended thinking — smarter responses for complex questions" placement="top">
-              <IconButton
-                size="small"
-                onClick={() => setExtendedThinking((v) => !v)}
-                sx={{
-                  width: 32, height: 32, p: "4px", borderRadius: "8px",
-                  color: extendedThinking ? "#4069FE" : color.type.default.value,
-                  backgroundColor: extendedThinking ? "rgba(64,105,254,0.10)" : undefined,
-                  "&:hover": { backgroundColor: extendedThinking ? "rgba(64,105,254,0.16)" : undefined },
-                }}
-              >
-                <ExtendedThinkingIcon />
-              </IconButton>
-            </Tooltip>
             <Tooltip title="Voice input" placement="top">
               <IconButton size="small" sx={{ width: 32, height: 32, p: "4px", borderRadius: "8px", color: color.type.default.value }}>
                 <ChatMicrophoneIcon />
@@ -1009,7 +1285,162 @@ export default function SmartAssistSidenav({
     <AIMoreMenu
       anchorEl={moreMenuAnchor}
       onClose={() => setMoreMenuAnchor(null)}
+      onGiveFeedback={() => { setFeedbackSeedFeature(undefined); setFeedbackOpen(true); }}
     />
+    <GiveFeedbackDialog
+      open={feedbackOpen}
+      onClose={() => setFeedbackOpen(false)}
+      defaultFeature={feedbackSeedFeature}
+    />
+
+    {/* ── Tools menu ── */}
+    {(() => {
+      const MENU_PAPER_SX = { minWidth: 220, borderRadius: "8px", border: "1px solid #DEE0E9", boxShadow: "0 8px 16px rgba(0,0,0,0.1), 0 0 2px rgba(0,0,0,0.08)", overflow: "visible" };
+      return (
+        <>
+          <Menu
+            open={Boolean(toolsMenuAnchor)}
+            anchorEl={toolsMenuAnchor}
+            onClose={closeToolsMenus}
+            anchorOrigin={{ vertical: "top", horizontal: "left" }}
+            transformOrigin={{ vertical: "bottom", horizontal: "left" }}
+            slotProps={{ paper: { sx: { ...MENU_PAPER_SX, mb: "6px" } } }}
+            MenuListProps={{ sx: { py: "4px" } }}
+          >
+            {/* Search only in (hidden on the admin side: web search prototype) */}
+            {audience !== "admin" && (
+            <MenuItem
+              onMouseEnter={(e) => { const el = e.currentTarget; if (submenuDelayRef.current) clearTimeout(submenuDelayRef.current); submenuDelayRef.current = setTimeout(() => { setSearchScopeAnchor(el); setExpertSkillsAnchor(null); setAgentReportingAnchor(null); }, 560); }}
+              onMouseLeave={() => { if (submenuDelayRef.current) clearTimeout(submenuDelayRef.current); }}
+              onClick={(e) => { const el = e.currentTarget; if (submenuDelayRef.current) clearTimeout(submenuDelayRef.current); setSearchScopeAnchor(el); setExpertSkillsAnchor(null); setAgentReportingAnchor(null); }}
+              sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", px: "12px", py: "8px", fontSize: "14px", color: "#232429", gap: "32px", minHeight: "auto", backgroundColor: activeToolsItem === "scope" ? "rgba(0,0,0,0.04)" : undefined, "&:hover": { backgroundColor: "rgba(0,0,0,0.04)" } }}
+            >
+              Search only in
+              <svg viewBox="0 0 24 24" style={{ width: 20, height: 20, flexShrink: 0 }}><path d="M13.9463 12.0003L8.35059 6.40466L9.4089 5.34636L15.5089 11.4003L15.063 11.9462L9.4089 18.654L8.35059 17.5957L13.9463 12.0003Z" fill="currentColor"/></svg>
+            </MenuItem>
+            )}
+
+            {/* Select a skill */}
+            <MenuItem
+              onMouseEnter={(e) => { const el = e.currentTarget; if (submenuDelayRef.current) clearTimeout(submenuDelayRef.current); submenuDelayRef.current = setTimeout(() => { setExpertSkillsAnchor(el); setAgentReportingAnchor(null); setSearchScopeAnchor(null); }, 560); }}
+              onMouseLeave={() => { if (submenuDelayRef.current) clearTimeout(submenuDelayRef.current); }}
+              onClick={(e) => { const el = e.currentTarget; if (submenuDelayRef.current) clearTimeout(submenuDelayRef.current); setExpertSkillsAnchor(el); setAgentReportingAnchor(null); setSearchScopeAnchor(null); }}
+              sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", px: "12px", py: "8px", fontSize: "14px", color: "#232429", gap: "32px", minHeight: "auto", backgroundColor: activeToolsItem === "expert" ? "rgba(0,0,0,0.04)" : undefined, "&:hover": { backgroundColor: "rgba(0,0,0,0.04)" } }}
+            >
+              Select a skill
+              <svg viewBox="0 0 24 24" style={{ width: 20, height: 20, flexShrink: 0 }}><path d="M13.9463 12.0003L8.35059 6.40466L9.4089 5.34636L15.5089 11.4003L15.063 11.9462L9.4089 18.654L8.35059 17.5957L13.9463 12.0003Z" fill="currentColor"/></svg>
+            </MenuItem>
+
+            {/* Generate insights */}
+            <MenuItem
+              onMouseEnter={(e) => { const el = e.currentTarget; if (submenuDelayRef.current) clearTimeout(submenuDelayRef.current); submenuDelayRef.current = setTimeout(() => { setAgentReportingAnchor(el); setExpertSkillsAnchor(null); setSearchScopeAnchor(null); }, 560); }}
+              onMouseLeave={() => { if (submenuDelayRef.current) clearTimeout(submenuDelayRef.current); }}
+              onClick={(e) => { const el = e.currentTarget; if (submenuDelayRef.current) clearTimeout(submenuDelayRef.current); setAgentReportingAnchor(el); setExpertSkillsAnchor(null); setSearchScopeAnchor(null); }}
+              sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", px: "12px", py: "8px", fontSize: "14px", color: "#232429", gap: "32px", minHeight: "auto", backgroundColor: activeToolsItem === "agent" ? "rgba(0,0,0,0.04)" : undefined, "&:hover": { backgroundColor: "rgba(0,0,0,0.04)" } }}
+            >
+              Generate insights
+              <svg viewBox="0 0 24 24" style={{ width: 20, height: 20, flexShrink: 0 }}><path d="M13.9463 12.0003L8.35059 6.40466L9.4089 5.34636L15.5089 11.4003L15.063 11.9462L9.4089 18.654L8.35059 17.5957L13.9463 12.0003Z" fill="currentColor"/></svg>
+            </MenuItem>
+
+            {/* Search the web (toggle) */}
+            <Box
+              onMouseEnter={() => { if (submenuDelayRef.current) clearTimeout(submenuDelayRef.current); setSearchScopeAnchor(null); setExpertSkillsAnchor(null); setAgentReportingAnchor(null); }}
+              onClick={(e) => { e.stopPropagation(); toggleWebSearch(); }}
+              sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", px: "12px", py: "8px", cursor: "pointer", "&:hover": { backgroundColor: "rgba(0,0,0,0.04)" } }}
+            >
+              <Typography sx={{ fontSize: "14px", color: "#232429", lineHeight: "20px" }}>Search the web</Typography>
+              <Switch size="small" checked={webOn} inputProps={{ "aria-label": "Search the web" }} onChange={(e) => { e.stopPropagation(); toggleWebSearch(); }} onClick={(e) => e.stopPropagation()} />
+            </Box>
+          </Menu>
+
+          {/* ── Search only in submenu ── */}
+          <Popper open={Boolean(searchScopeAnchor)} anchorEl={searchScopeAnchor} placement="left-start" style={{ zIndex: 1400, marginRight: "4px" }}>
+            <Paper sx={{ ...MENU_PAPER_SX, minWidth: 232 }}>
+              <MenuList sx={{ py: "4px" }}>
+                {inBook && (
+                  <MenuItem onClick={() => { setSearchScope("book"); closeToolsMenus(); }} sx={{ px: "12px", py: "8px", gap: "10px", alignItems: "center", minHeight: "auto", justifyContent: "space-between", "&:hover": { backgroundColor: "rgba(0,0,0,0.04)" } }}>
+                    <Typography sx={{ fontSize: "14px", color: "#232429", lineHeight: "20px" }}>{currentBookTitle ?? "This book"}</Typography>
+                    {searchScope === "book" && <svg width="16" height="16" viewBox="0 0 20 20" fill="none"><path d="M7.97917 14.3958L3.85417 10.2708L4.72917 9.375L7.97917 12.625L15.2708 5.33333L16.1458 6.22917L7.97917 14.3958Z" fill="#232429"/></svg>}
+                  </MenuItem>
+                )}
+                <MenuItem onClick={() => { setSearchScope("books"); closeToolsMenus(); }} sx={{ px: "12px", py: "8px", gap: "10px", alignItems: "center", minHeight: "auto", justifyContent: "space-between", "&:hover": { backgroundColor: "rgba(0,0,0,0.04)" } }}>
+                  <Typography sx={{ fontSize: "14px", color: "#232429", lineHeight: "20px" }}>Current & archived books</Typography>
+                  {searchScope === "books" && <svg width="16" height="16" viewBox="0 0 20 20" fill="none"><path d="M7.97917 14.3958L3.85417 10.2708L4.72917 9.375L7.97917 12.625L15.2708 5.33333L16.1458 6.22917L7.97917 14.3958Z" fill="#232429"/></svg>}
+                </MenuItem>
+                <MenuItem onClick={() => { setSearchScope("resource"); closeToolsMenus(); }} sx={{ px: "12px", py: "8px", gap: "10px", alignItems: "center", minHeight: "auto", justifyContent: "space-between", "&:hover": { backgroundColor: "rgba(0,0,0,0.04)" } }}>
+                  <Typography sx={{ fontSize: "14px", color: "#232429", lineHeight: "20px" }}>Resource center</Typography>
+                  {searchScope === "resource" && <svg width="16" height="16" viewBox="0 0 20 20" fill="none"><path d="M7.97917 14.3958L3.85417 10.2708L4.72917 9.375L7.97917 12.625L15.2708 5.33333L16.1458 6.22917L7.97917 14.3958Z" fill="#232429"/></svg>}
+                </MenuItem>
+                <MenuItem onClick={() => { setSearchScope("dataroom"); closeToolsMenus(); }} sx={{ px: "12px", py: "8px", gap: "10px", alignItems: "center", minHeight: "auto", justifyContent: "space-between", "&:hover": { backgroundColor: "rgba(0,0,0,0.04)" } }}>
+                  <Typography sx={{ fontSize: "14px", color: "#232429", lineHeight: "20px" }}>Data room</Typography>
+                  {searchScope === "dataroom" && <svg width="16" height="16" viewBox="0 0 20 20" fill="none"><path d="M7.97917 14.3958L3.85417 10.2708L4.72917 9.375L7.97917 12.625L15.2708 5.33333L16.1458 6.22917L7.97917 14.3958Z" fill="#232429"/></svg>}
+                </MenuItem>
+                <MenuItem onClick={() => { setSearchScope("tasks"); closeToolsMenus(); }} sx={{ px: "12px", py: "8px", gap: "10px", alignItems: "center", minHeight: "auto", justifyContent: "space-between", "&:hover": { backgroundColor: "rgba(0,0,0,0.04)" } }}>
+                  <Typography sx={{ fontSize: "14px", color: "#232429", lineHeight: "20px" }}>Tasks</Typography>
+                  {searchScope === "tasks" && <svg width="16" height="16" viewBox="0 0 20 20" fill="none"><path d="M7.97917 14.3958L3.85417 10.2708L4.72917 9.375L7.97917 12.625L15.2708 5.33333L16.1458 6.22917L7.97917 14.3958Z" fill="#232429"/></svg>}
+                </MenuItem>
+                <MenuItem onClick={() => { setSearchScope("decisions"); closeToolsMenus(); }} sx={{ px: "12px", py: "8px", gap: "10px", alignItems: "center", minHeight: "auto", justifyContent: "space-between", "&:hover": { backgroundColor: "rgba(0,0,0,0.04)" } }}>
+                  <Typography sx={{ fontSize: "14px", color: "#232429", lineHeight: "20px" }}>Decision hub</Typography>
+                  {searchScope === "decisions" && <svg width="16" height="16" viewBox="0 0 20 20" fill="none"><path d="M7.97917 14.3958L3.85417 10.2708L4.72917 9.375L7.97917 12.625L15.2708 5.33333L16.1458 6.22917L7.97917 14.3958Z" fill="#232429"/></svg>}
+                </MenuItem>
+                <MenuItem onClick={() => { setSearchScope("questionnaires"); closeToolsMenus(); }} sx={{ px: "12px", py: "8px", gap: "10px", alignItems: "center", minHeight: "auto", justifyContent: "space-between", "&:hover": { backgroundColor: "rgba(0,0,0,0.04)" } }}>
+                  <Typography sx={{ fontSize: "14px", color: "#232429", lineHeight: "20px" }}>Questionnaires</Typography>
+                  {searchScope === "questionnaires" && <svg width="16" height="16" viewBox="0 0 20 20" fill="none"><path d="M7.97917 14.3958L3.85417 10.2708L4.72917 9.375L7.97917 12.625L15.2708 5.33333L16.1458 6.22917L7.97917 14.3958Z" fill="#232429"/></svg>}
+                </MenuItem>
+              </MenuList>
+            </Paper>
+          </Popper>
+
+          {/* ── Select a skill submenu ── */}
+          <Popper open={Boolean(expertSkillsAnchor)} anchorEl={expertSkillsAnchor} placement="left-start" style={{ zIndex: 1400, marginRight: "4px" }}>
+            <Paper sx={{ ...MENU_PAPER_SX, minWidth: 280 }}>
+              <MenuList sx={{ py: "4px" }}>
+                {EXPERT_SKILLS.map(({ id, label, desc, slash, Icon }) => (
+                  <MenuItem key={id} onClick={() => { closeToolsMenus(); setActiveExpertSkill(id); }} sx={{ px: "12px", py: "8px", gap: "10px", alignItems: "flex-start", minHeight: "auto", "&:hover": { backgroundColor: "rgba(0,0,0,0.04)" } }}>
+                    <Box sx={{ mt: "2px", color: "#575A67", flexShrink: 0 }}><Icon size="md" /></Box>
+                    <Box sx={{ flex: 1, minWidth: 0 }}>
+                      <Box sx={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                        <Typography sx={{ fontSize: "14px", fontWeight: 600, color: "#232429", lineHeight: "20px" }}>{label}</Typography>
+                        <Typography component="span" sx={{ fontSize: "11px", fontWeight: 500, color: "#575A67", background: "rgba(0,0,0,0.06)", borderRadius: "4px", px: "4px", py: "1px", lineHeight: "16px", whiteSpace: "nowrap" }}>{slash}</Typography>
+                      </Box>
+                      <Typography sx={{ fontSize: "12px", color: "#575A67", lineHeight: "16px", mt: "2px" }}>{desc}</Typography>
+                    </Box>
+                  </MenuItem>
+                ))}
+                <Divider sx={{ my: "4px" }} />
+                <MenuItem
+                  onClick={() => closeToolsMenus()}
+                  sx={{ px: "12px", py: "8px", gap: "10px", alignItems: "center", minHeight: "auto", "&:hover": { backgroundColor: "rgba(0,0,0,0.04)" } }}
+                >
+                  <Box sx={{ color: "#575A67", flexShrink: 0 }}><SettingsIcon size="md" /></Box>
+                  <Typography sx={{ fontSize: "14px", fontWeight: 400, color: "#232429", lineHeight: "20px" }}>Manage expert skills</Typography>
+                </MenuItem>
+              </MenuList>
+            </Paper>
+          </Popper>
+
+          {/* ── Generate insights submenu ── */}
+          <Popper open={Boolean(agentReportingAnchor)} anchorEl={agentReportingAnchor} placement="left-start" style={{ zIndex: 1400, marginRight: "4px" }}>
+            <Paper sx={{ ...MENU_PAPER_SX, minWidth: 296, maxWidth: 296 }}>
+              <MenuList sx={{ py: "4px" }}>
+                {AGENT_REPORTING.map(({ id, label, tag, desc, Icon }) => (
+                  <MenuItem key={id} onClick={() => { closeToolsMenus(); setActiveAgentMode(id); setDeepResearchActive(false); }} sx={{ px: "12px", py: "8px", gap: "10px", alignItems: "flex-start", minHeight: "auto", "&:hover": { backgroundColor: "rgba(0,0,0,0.04)" } }}>
+                    <Box sx={{ mt: "2px", color: "#575A67", flexShrink: 0 }}><Icon size="md" /></Box>
+                    <Box sx={{ minWidth: 0 }}>
+                      <Box sx={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+                        <Typography sx={{ fontSize: "14px", fontWeight: 600, color: "#232429", lineHeight: "20px" }}>{label}</Typography>
+                        <Typography component="span" sx={{ fontSize: "11px", fontWeight: 500, color: "#4069FE", background: "rgba(64,105,254,0.08)", borderRadius: "4px", px: "4px", py: "1px", lineHeight: "16px", whiteSpace: "nowrap" }}>{tag}</Typography>
+                      </Box>
+                      <Typography sx={{ fontSize: "12px", color: "#575A67", lineHeight: "16px", mt: "2px", whiteSpace: "normal", wordBreak: "break-word" }}>{desc}</Typography>
+                    </Box>
+                  </MenuItem>
+                ))}
+              </MenuList>
+            </Paper>
+          </Popper>
+        </>
+      );
+    })()}
     </>
   );
 }
